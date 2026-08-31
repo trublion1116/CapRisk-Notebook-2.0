@@ -3,7 +3,11 @@ from langchain_core.tools import tool
 
 from app.llm import build_llm
 from app.on_client import OpenNotebookClient
-from app.subagents import registered_subagents
+from app.subagents import (
+    SubAgentContext,
+    registered_subagents,
+    subagent_catalog,
+)
 
 CHAT_PREAMBLE = """\
 你是"资金风险AI分析系统"的分析助手，服务于宏观经济报告（如 BIS 年度报告）的研究人员。
@@ -13,27 +17,25 @@ CHAT_PREAMBLE = """\
 - 用中文回答，专业、直接、有信息量。\
 """
 
-ORCHESTRATOR_PROMPT = """\
+ORCHESTRATOR_PROMPT_TEMPLATE = """\
 你是资金风险分析系统的编排分析师（orchestrator），负责对一份权威宏观报告\
-（如 BIS 年度经济报告）完成核心观点提取并写回 OpenNotebook。
+（如 BIS 年度经济报告）完成分析任务并将结果写回 OpenNotebook。
 
 重要——数据流向说明：
-- 报告共 {total_sections} 节，内容系统已准备好，由 viewpoint-extraction subagent \
-内部的 list_sections / read_section 工具持有。
+- 报告共 {total_sections} 节，内容系统已准备好，由各子代理内部的阅读工具持有。
 - 你没有任何读取报告的工具，也不需要。不要用 ls / glob / read_file 等文件工具\
 寻找报告——虚拟文件系统里没有报告文件，那是死路。
-- 你的职责只有一个入口：调用 task 把阅读与候选提取完整交给 subagent。
+- 你的职责只有一个入口：调用 task 把具体工作派给子代理。
 
 分批派发策略（上下文安全，必须遵守）：
-- 每次 task 只派一个分节区间（约 {batch_size} 节，如"请负责第 0-29 节，\
-逐节读完并返回该区间候选"），区间按 list_sections 的编号切分，覆盖全部 \
-{total_sections} 节、不重不漏。
-- 单次 task 让 subagent 读全部 {total_sections} 节是禁止的——会超出模型上下文。
-- 收齐所有区间的候选后，进入终审。
+- 每次 task 只派一个分节区间（约 {batch_size} 节，如"请负责第 0-14 节，\
+逐节读完并返回该区间候选"），区间按分节编号切分，覆盖全部 {total_sections} 节、\
+不重不漏。
+- 单次 task 让子代理读全部 {total_sections} 节是禁止的——会超出模型上下文。
+- 收齐所有区间的结果后，进入终审。
 
-可用 subagent（通过 task 工具派发）：
-- viewpoint-extraction：对指定分节区间做全覆盖逐节阅读，返回该区间结构化候选清单\
-（原文引用+解读+新颖性+重要性）
+可用子代理（通过 task 工具派发）：
+{subagent_catalog}
 
 工作流程（严格遵循）：
 1. **规划**：用 todo 列出步骤（划分区间 → 逐批派发 → 合并终审 → 逐条提交 → 汇总）。
@@ -44,6 +46,17 @@ ORCHESTRATOR_PROMPT = """\
 quote 必须保持候选中的逐字原文引用，不得改写。
 5. **汇总**：最终回答报告——共几批、收到多少条候选、提交多少条、最重要的 3 条是什么。\
 """
+
+
+def build_orchestrator_prompt(
+    total_sections: int, batch_size: int, catalog: list[str]
+) -> str:
+    """组装编排 prompt：子代理目录由注册表自动拼接（开闭原则）。"""
+    return ORCHESTRATOR_PROMPT_TEMPLATE.format(
+        total_sections=total_sections,
+        batch_size=batch_size,
+        subagent_catalog="\n".join(catalog),
+    )
 
 
 def build_chat_agent():
@@ -71,7 +84,13 @@ def build_orchestrator_agent(
     # rate limits trigger during the reading phase otherwise (observed
     # 2026-08-31 with batches of 30).
     batch = min(15, total) if total else 1
-    prompt = ORCHESTRATOR_PROMPT.format(total_sections=total, batch_size=batch)
+    context = SubAgentContext(
+        client=client,
+        sections=sections,
+        source_id=source_id,
+        insight_type=insight_type,
+    )
+    prompt = build_orchestrator_prompt(total, batch, subagent_catalog())
     counter = {"submitted": 0}
 
     @tool
@@ -105,6 +124,6 @@ def build_orchestrator_agent(
     return create_deep_agent(
         model=build_llm(max_tokens=8192, temperature=0.2),
         tools=[submit_insight],
-        subagents=registered_subagents(client, sections, source_id, insight_type),
+        subagents=registered_subagents(context),
         system_prompt=prompt,
     )

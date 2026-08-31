@@ -1,27 +1,29 @@
-"""Capability subagent registry.
+"""能力子代理包。
 
-All subagents available to the orchestrator agent. Adding a new capability:
-1. Create a module with a ``build(...) -> Dict[str, Any]`` factory returning a
-   deepagents SubAgent spec (name/description/system_prompt/tools).
-2. Import and append it in :func:`registered_subagents` below.
-
-Every /extract run registers ALL subagents; the orchestrator decides dispatch
-order via its planning.
+包内模块自动发现：新增子代理 = 在本包新建一个模块文件，定义
+``BaseSubAgent`` 子类即可（见 base.py 的说明），此处无需改动。
 """
 
-from typing import Any
+import importlib
+import pkgutil
 
-from app.on_client import OpenNotebookClient
-from app.subagents import viewpoint_extraction
+from app.subagents.base import (
+    BaseSubAgent,
+    SubAgentContext,
+    registered_subagent_classes,
+    registered_subagents,
+    subagent_catalog,
+)
 
+# 导入包内全部模块以触发类注册（base 已导入，跳过避免重复）
+for _mod in pkgutil.iter_modules(__path__):
+    if _mod.name != "base":
+        importlib.import_module(f"{__name__}.{_mod.name}")
 
-def registered_subagents(
-    client: OpenNotebookClient,
-    sections: list[dict[str, Any]],
-    source_id: str,
-    insight_type: str,
-) -> list[dict[str, Any]]:
-    """Build every registered subagent with tools bound to this job."""
-    return [
-        viewpoint_extraction.build(client, sections),
-    ]
+__all__ = [
+    "BaseSubAgent",
+    "SubAgentContext",
+    "registered_subagent_classes",
+    "registered_subagents",
+    "subagent_catalog",
+]
