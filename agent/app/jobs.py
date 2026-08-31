@@ -12,6 +12,7 @@ class ExtractionJob:
     error: str | None = None
     source_title: str | None = None
     sections: int = 0
+    trace_id: str | None = None
     log: list[str] = field(default_factory=list)
     started_at: float = field(default_factory=time.time)
     finished_at: float | None = None

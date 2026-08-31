@@ -3,6 +3,7 @@ from langchain_core.tools import tool
 
 from app.llm import build_llm
 from app.on_client import OpenNotebookClient
+from app.subagents import registered_subagents
 
 CHAT_PREAMBLE = """\
 你是"资金风险AI分析系统"的分析助手，服务于宏观经济报告（如 BIS 年度报告）的研究人员。
@@ -12,64 +13,65 @@ CHAT_PREAMBLE = """\
 - 用中文回答，专业、直接、有信息量。\
 """
 
-EXTRACTION_PROMPT = """\
-你是资深宏观金融分析师，任务是从一份权威报告（如 BIS 年度报告）中提取真正核心的观点。
+ORCHESTRATOR_PROMPT = """\
+你是资金风险分析系统的编排分析师（orchestrator），负责对一份权威宏观报告\
+（如 BIS 年度经济报告）完成核心观点提取并写回 OpenNotebook。
 
-背景问题：AI 摘要倾向于提取"常见、模型熟悉"的内容，而报告中一句带过的关键信息\
-（buried lede）才是真正的核心增量。你的流程必须刻意对抗这种偏差。
+重要——数据流向说明：
+- 报告共 {total_sections} 节，内容系统已准备好，由 viewpoint-extraction subagent \
+内部的 list_sections / read_section 工具持有。
+- 你没有任何读取报告的工具，也不需要。不要用 ls / glob / read_file 等文件工具\
+寻找报告——虚拟文件系统里没有报告文件，那是死路。
+- 你的职责只有一个入口：调用 task 把阅读与候选提取完整交给 subagent。
+
+分批派发策略（上下文安全，必须遵守）：
+- 每次 task 只派一个分节区间（约 {batch_size} 节，如"请负责第 0-29 节，\
+逐节读完并返回该区间候选"），区间按 list_sections 的编号切分，覆盖全部 \
+{total_sections} 节、不重不漏。
+- 单次 task 让 subagent 读全部 {total_sections} 节是禁止的——会超出模型上下文。
+- 收齐所有区间的候选后，进入终审。
+
+可用 subagent（通过 task 工具派发）：
+- viewpoint-extraction：对指定分节区间做全覆盖逐节阅读，返回该区间结构化候选清单\
+（原文引用+解读+新颖性+重要性）
 
 工作流程（严格遵循）：
-1. **全覆盖阅读**：先调用 list_sections 查看全部分节，然后用 read_section 逐节读完\
-所有分节，不得跳过任何一节。
-2. **候选收集**：阅读每节时识别候选关键句，重点关注：
-   - 一句带过的风险提示或警告
-   - 与主流叙事相反或明显偏离共识的表述
-   - 新出现的数据拐点、结构性变化
-   - 政策措辞的细微变化（措辞收紧/放松、条件从句的变化）
-   - 脚注、图注、附录中承载的关键限定信息
-3. **新颖性判断**：对每个候选判断它相对于"市场共识/惯常宏观表述"是否包含增量信息。\
-套话、复述常识、纯背景介绍必须丢弃。
-4. **提交**：只对真正核心的观点调用 submit_insight，目标 5~15 条，宁缺毋滥。\
-quote 必须逐字引用报告原文；原文为英文时 quote 保留英文，analysis 用中文撰写。
-5. **收尾**：完成后输出简要总结：共提取多少条、最重要的 3 条是什么、为什么重要。\
+1. **规划**：用 todo 列出步骤（划分区间 → 逐批派发 → 合并终审 → 逐条提交 → 汇总）。
+2. **逐批派发**：按区间调用 task，收集每批返回的候选清单。
+3. **终审**：合并全部候选后去重与终审——相同观点合并、删除仍显套话或增量不足的\
+条目、宁缺毋滥。
+4. **提交**：对通过的每条调用 submit_insight 写回（目标 5~15 条）。\
+quote 必须保持候选中的逐字原文引用，不得改写。
+5. **汇总**：最终回答报告——共几批、收到多少条候选、提交多少条、最重要的 3 条是什么。\
 """
 
 
 def build_chat_agent():
     """Chat agent used by the /chat endpoint (ON proxies notebook chat here)."""
     return create_deep_agent(
-        model=build_llm(),
+        model=build_llm(max_tokens=8192),
         system_prompt=CHAT_PREAMBLE,
         tools=[],
     )
 
 
-def build_extraction_agent(
+def build_orchestrator_agent(
     client: OpenNotebookClient,
-    sections: list[dict[str, object]],
+    sections: list,
     source_id: str,
     insight_type: str,
 ):
-    """Extraction agent with full-coverage reading and insight write-back tools."""
+    """Lean orchestration agent: dispatch subagents, review, submit insights.
 
-    @tool
-    def list_sections() -> str:
-        """列出报告全部分节及其开头预览，用于规划完整覆盖阅读。"""
-        lines = []
-        for s in sections:
-            text = str(s["text"])
-            preview = text[:80].replace("\n", " ")
-            lines.append(f"[{s['index']}] ({len(text)} chars) {preview}...")
-        return "\n".join(lines)
-
-    @tool
-    def read_section(index: int) -> str:
-        """读取指定编号分节的全文。必须逐节读完所有分节，保证全覆盖。"""
-        for s in sections:
-            if s["index"] == index:
-                return str(s["text"])
-        return f"ERROR: section {index} not found"
-
+    Holds only the submission tool - all reading/analysis capabilities live
+    in registered subagents (see app/subagents/).
+    """
+    total = len(sections)
+    # 15 per batch: halves tokens-per-minute vs larger batches - GLM 1302
+    # rate limits trigger during the reading phase otherwise (observed
+    # 2026-08-31 with batches of 30).
+    batch = min(15, total) if total else 1
+    prompt = ORCHESTRATOR_PROMPT.format(total_sections=total, batch_size=batch)
     counter = {"submitted": 0}
 
     @tool
@@ -79,7 +81,7 @@ def build_extraction_agent(
         novelty: str,
         significance: str,
     ) -> str:
-        """提交一条核心观点到 OpenNotebook。
+        """提交一条核心观点到 OpenNotebook（编排层统一提交，subagent 不提交）。
 
         Args:
             quote: 报告原文的逐字引用（英文原文保留英文）。
@@ -101,7 +103,8 @@ def build_extraction_agent(
         )
 
     return create_deep_agent(
-        model=build_llm(temperature=0.2),
-        tools=[list_sections, read_section, submit_insight],
-        system_prompt=EXTRACTION_PROMPT,
+        model=build_llm(max_tokens=8192, temperature=0.2),
+        tools=[submit_insight],
+        subagents=registered_subagents(client, sections, source_id, insight_type),
+        system_prompt=prompt,
     )

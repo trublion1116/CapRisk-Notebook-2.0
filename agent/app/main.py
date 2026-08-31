@@ -1,3 +1,5 @@
+import os
+
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
@@ -143,6 +145,7 @@ async def job_status(job_id: str, _: None = Depends(check_auth)):
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    langfuse_base = os.environ.get("LANGFUSE_BASE_URL", "http://localhost:3000")
     return {
         "job_id": job.id,
         "source_id": job.source_id,
@@ -151,6 +154,11 @@ async def job_status(job_id: str, _: None = Depends(check_auth)):
         "status": job.status,
         "error": job.error,
         "sections": job.sections,
+        # Langfuse session id == job id; trace link for quick access.
+        "trace_id": job.trace_id,
+        "trace_url": (
+            f"{langfuse_base}/trace/{job.trace_id}" if job.trace_id else None
+        ),
         "log": job.log,
         "started_at": job.started_at,
         "finished_at": job.finished_at,

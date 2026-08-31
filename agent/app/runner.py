@@ -2,7 +2,7 @@ import time
 
 from langchain_core.messages import HumanMessage
 
-from app.agents import build_extraction_agent
+from app.agents import build_orchestrator_agent
 from app.extraction import source_bytes_to_text, split_sections
 from app.jobs import ExtractionJob
 from app.on_client import OpenNotebookClient
@@ -39,13 +39,14 @@ async def run_extraction_job(job: ExtractionJob) -> None:
     try:
         with traced(
             "insight-extraction",
-            session_id=f"extract:{job.source_id}",
+            session_id=job.id,
             tags=["extract"],
             input={
                 "source_id": job.source_id,
                 "insight_type": job.insight_type,
             },
         ) as span:
+            job.trace_id = str(getattr(span, "trace_id", "") or "")
             job.record("fetching source text")
             with child_span("fetch-source-text"):
                 text, origin = await fetch_source_text(client, job)
@@ -56,7 +57,7 @@ async def run_extraction_job(job: ExtractionJob) -> None:
             job.sections = len(sections)
             job.record(f"split into {len(sections)} sections, agent starting")
 
-            agent = build_extraction_agent(
+            agent = build_orchestrator_agent(
                 client, sections, job.source_id, job.insight_type
             )
             await agent.ainvoke(
