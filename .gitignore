@@ -1,0 +1,30 @@
+# Secrets / local env
+.env
+agent/.env
+open-notebook/.env
+
+# Python runtime
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Runtime data & logs
+logs/
+*.log
+open-notebook/surreal_data/
+open-notebook/notebook_data/
+agent/data/
+
+# Node
+node_modules/
+.next/
+
+# Third-party clones living in the workspace (not part of the system)
+langfuse/
+
+# Personal session / chat working notes
+session-*.md
+chat*.md
