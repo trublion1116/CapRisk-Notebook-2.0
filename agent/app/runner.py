@@ -1,3 +1,4 @@
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -10,6 +11,8 @@ from app.extraction import source_bytes_to_text, split_sections
 from app.jobs import ExtractionJob
 from app.on_client import OpenNotebookClient
 from app.tracing import child_span, new_handler, traced
+
+logger = logging.getLogger(__name__)
 
 # Below this, a stored full_text is considered usable and the PDF download +
 # pypdf fallback is skipped (guards against empty/placeholder values).
@@ -93,9 +96,12 @@ async def run_extraction_job(
 
         job.status = "done"
         job.record("extraction finished")
-    except Exception as e:  # noqa: BLE001 - job boundary: record any failure
+    except Exception as e:  # job boundary: record any failure
         job.status = "failed"
-        job.error = str(e)
-        job.record(f"failed: {e}")
+        # repr (not str): exceptions like asyncio.TimeoutError stringify to
+        # "" which hides the failure cause entirely.
+        job.error = repr(e)
+        job.record(f"failed: {job.error}")
+        logger.exception("extraction job %s failed", job.id)
     finally:
         job.finished_at = time.time()

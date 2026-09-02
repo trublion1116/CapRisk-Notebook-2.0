@@ -14,10 +14,13 @@ stream chunks without running a real LLM.
 """
 
 import json
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, ToolMessage
+
+logger = logging.getLogger(__name__)
 
 # Tool results can be huge (e.g. a full source list); cap what goes over SSE.
 TOOL_RESULT_MAX_CHARS = 500
@@ -139,8 +142,9 @@ async def stream_chat_turn(
                                 last_ai_text = text
                 for event in events_from_update(chunk):
                     yield sse(event)
-    except Exception as e:  # noqa: BLE001 - stream boundary: report anything
-        yield sse({"type": "error", "message": str(e)})
+    except Exception as e:  # stream boundary: report anything
+        logger.exception("chat stream failed")
+        yield sse({"type": "error", "message": repr(e)})
         return
 
     yield sse({"type": "final", "content": last_ai_text})

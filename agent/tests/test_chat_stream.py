@@ -163,4 +163,6 @@ async def test_stream_chat_turn_error_yields_error_event():
     lines = [line async for line in stream_chat_turn(agent, [])]
 
     payload = json.loads(lines[-1][6:])
-    assert payload == {"type": "error", "message": "LLM down"}
+    # repr (not str): keeps the exception type visible even for
+    # empty-message exceptions like asyncio.TimeoutError
+    assert payload == {"type": "error", "message": "RuntimeError('LLM down')"}
