@@ -55,12 +55,14 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     enabled: !!notebookId && !!currentSessionId
   })
 
-  // Update messages when current session changes
+  // Update messages when session changes.
+  // Guarded while sending: mid-stream refetches (e.g. window-focus) would
+  // replace the live-streaming bubble with stale checkpoint history.
   useEffect(() => {
-    if (currentSession?.messages) {
+    if (currentSession?.messages && !isSending) {
       setMessages(currentSession.messages)
     }
-  }, [currentSession])
+  }, [currentSession, isSending])
 
   // Auto-select most recent session when sessions are loaded
   useEffect(() => {
@@ -304,6 +306,11 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
               )
               return { ...msg, toolCalls }
             })
+            // Insights land live during extraction - notify listeners
+            // (source detail pages refresh their insight lists).
+            if (data.name === 'submit_insight') {
+              window.dispatchEvent(new CustomEvent('onv2:insights-updated'))
+            }
           } else if (data.type === 'final') {
             // Final answer is the source of truth (tokens may drop mid-stream)
             if (data.content) {

@@ -37,12 +37,16 @@ export function useSourceChat(sourceId: string) {
     enabled: !!sourceId && !!currentSessionId
   })
 
-  // Update messages when session changes
+  // Update messages when session changes.
+  // Guarded while streaming: mid-stream refetches (e.g. window-focus) would
+  // replace the live-streaming bubble with stale checkpoint history, losing
+  // the in-flight answer. The post-stream refetch applies after
+  // setIsStreaming(false).
   useEffect(() => {
-    if (currentSession?.messages) {
+    if (currentSession?.messages && !isStreaming) {
       setMessages(currentSession.messages)
     }
-  }, [currentSession])
+  }, [currentSession, isStreaming])
 
   // Auto-select most recent session when sessions are loaded
   useEffect(() => {
@@ -217,6 +221,11 @@ export function useSourceChat(sourceId: string) {
               )
               return { ...msg, toolCalls }
             })
+            // Insights are written back live during extraction - let the
+            // source detail page refresh its insight list as they land.
+            if (data.name === 'submit_insight') {
+              window.dispatchEvent(new CustomEvent('onv2:insights-updated', { detail: { sourceId } }))
+            }
           } else if (data.type === 'final') {
             // Final answer is the source of truth (tokens may drop mid-stream)
             if (data.content) {
@@ -246,9 +255,15 @@ export function useSourceChat(sourceId: string) {
       // Drop a partially-streamed AI bubble so history stays clean
       setMessages(prev => prev.filter(msg => msg.id !== aiMessageId))
     } finally {
-      setIsStreaming(false)
-      // Refetch session to get persisted messages
-      refetchCurrentSession()
+      // Order matters: refetch the checkpointed history FIRST, then lift the
+      // streaming gate. The messages-sync effect (gated on !isStreaming)
+      // then replaces the streamed bubble with the fresh history in one go -
+      // flipping the gate first would briefly apply stale history.
+      try {
+        await refetchCurrentSession()
+      } finally {
+        setIsStreaming(false)
+      }
     }
   }, [sourceId, currentSessionId, refetchCurrentSession, queryClient, t])
 

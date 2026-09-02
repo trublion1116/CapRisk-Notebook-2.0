@@ -157,6 +157,21 @@ function SourceDetailContentInner({
     }
   }, [fetchInsights, fetchTransformations, sourceId])
 
+  // Live insight refresh: the chat agent (notebook or source chat) writes
+  // insights back mid-extraction and dispatches this event per submit_insight.
+  // Keeps the insight list and the sources list (insights_count) in sync
+  // without a manual F5.
+  useEffect(() => {
+    const onInsightsUpdated = (e?: Event) => {
+      const detail = (e as CustomEvent | undefined)?.detail as { sourceId?: string } | undefined
+      if (detail?.sourceId && detail.sourceId !== sourceId) return
+      void fetchInsights()
+      queryClient.invalidateQueries({ queryKey: ['sources'] })
+    }
+    window.addEventListener('onv2:insights-updated', onInsightsUpdated)
+    return () => window.removeEventListener('onv2:insights-updated', onInsightsUpdated)
+  }, [fetchInsights, queryClient, sourceId])
+
   const createInsight = async () => {
     if (!selectedTransformation) {
       toast.error(t('sources.selectTransformation'))
