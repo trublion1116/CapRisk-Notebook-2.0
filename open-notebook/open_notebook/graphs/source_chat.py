@@ -157,11 +157,14 @@ def _call_model_with_source_context_inner(
     # forwarded via the LangGraph stream writer; the final text returns.
     if AGENT_SERVICE_URL:
         thread_id = str(config.get("configurable", {}).get("thread_id", ""))
-        content = _stream_agent_service(
+        content, tool_calls = _stream_agent_service(
             system_prompt, state.get("messages", []), thread_id
         )
         return {
-            "messages": AIMessage(content=clean_thinking_content(content)),
+            "messages": AIMessage(
+                content=clean_thinking_content(content),
+                additional_kwargs={"tool_calls": tool_calls},
+            ),
             "source": source,
             "insights": insights,
             "context": formatted_context,

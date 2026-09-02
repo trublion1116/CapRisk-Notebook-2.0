@@ -53,12 +53,40 @@ def _agent_service_payload(system_prompt: str, messages: list, thread_id: str) -
     }
 
 
-def _stream_agent_service(system_prompt: str, messages: list, thread_id: str) -> str:
+def _merge_tool_event(collected: list, event: dict) -> None:
+    """Fold a streamed tool_call/tool_result event into a toolCalls list.
+
+    tool_call creates the entry (status running); tool_result updates the
+    matching entry (matched by id, falling back to name) with the final
+    status and truncated result. The list is persisted on the AI message so
+    session history replays show the tool tray after refresh.
+    """
+    if event.get("type") == "tool_call":
+        collected.append(
+            {
+                "id": event.get("id") or "",
+                "name": event.get("name") or "",
+                "args": event.get("args") or {},
+                "status": "running",
+            }
+        )
+    elif event.get("type") == "tool_result":
+        for tc in reversed(collected):
+            if tc["id"] == event.get("id") or (
+                not tc["id"] and tc["name"] == event.get("name")
+            ):
+                tc["status"] = event.get("status") or "success"
+                tc["result"] = event.get("content") or ""
+                break
+
+
+def _stream_agent_service(system_prompt: str, messages: list, thread_id: str) -> tuple:
     """Proxy the chat turn to the external agent service's SSE endpoint.
 
     Intermediate events (tokens, tool calls) are forwarded through the
     LangGraph stream writer (custom stream mode) so streaming consumers can
-    render them; the final answer text is returned for the node state.
+    render them; the final answer text and the merged tool-call list are
+    returned for the node state.
 
     Under a plain (non-streaming) invoke the writer is a no-op, so this path
     behaves like the old synchronous proxy.
@@ -68,6 +96,7 @@ def _stream_agent_service(system_prompt: str, messages: list, thread_id: str) ->
     except RuntimeError:  # no stream context (plain invoke) - events dropped
         writer = lambda event: None  # noqa: E731
 
+    tool_calls: list = []
     try:
         with httpx.Client(timeout=AGENT_SERVICE_TIMEOUT) as client:
             with client.stream(
@@ -92,6 +121,8 @@ def _stream_agent_service(system_prompt: str, messages: list, thread_id: str) ->
                     elif event_type == "error":
                         error_event = event.get("message") or "agent error"
                     else:
+                        if event_type in ("tool_call", "tool_result"):
+                            _merge_tool_event(tool_calls, event)
                         writer(event)
     except httpx.HTTPError as e:
         raise ExternalServiceError(f"Agent service request failed: {e}") from e
@@ -100,7 +131,7 @@ def _stream_agent_service(system_prompt: str, messages: list, thread_id: str) ->
         raise ExternalServiceError(f"Agent service failed: {error_event}")
     if not final_content.strip():
         raise ExternalServiceError("Agent service returned an empty response")
-    return final_content
+    return final_content, tool_calls
 
 
 def _invoke_agent_service(system_prompt: str, messages: list, thread_id: str) -> str:
@@ -133,10 +164,15 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
 
         if AGENT_SERVICE_URL:
             thread_id = str(config.get("configurable", {}).get("thread_id", ""))
-            content = _stream_agent_service(
+            content, tool_calls = _stream_agent_service(
                 system_prompt, state.get("messages", []), thread_id
             )
-            return {"messages": AIMessage(content=clean_thinking_content(content))}
+            return {
+                "messages": AIMessage(
+                    content=clean_thinking_content(content),
+                    additional_kwargs={"tool_calls": tool_calls},
+                )
+            }
 
         payload = [SystemMessage(content=system_prompt)] + state.get("messages", [])
         model_id = config.get("configurable", {}).get("model_id") or state.get(

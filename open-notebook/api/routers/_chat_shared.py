@@ -27,6 +27,13 @@ class ChatMessage(BaseModel):
     type: str = Field(..., description="Message type (human|ai)")
     content: str = Field(..., description="Message content")
     timestamp: Optional[str] = Field(None, description="Message timestamp")
+    toolCalls: Optional[List[dict]] = Field(
+        None,
+        description=(
+            "Tool calls made while producing this AI message "
+            "(persisted from the agent service stream)"
+        ),
+    )
 
 
 class SuccessResponse(BaseModel):
@@ -83,12 +90,14 @@ def extract_chat_messages(raw_messages: Iterable[Any]) -> List[ChatMessage]:
     """Convert LangGraph/LangChain state messages into `ChatMessage` models."""
     messages: List[ChatMessage] = []
     for msg in raw_messages:
+        kwargs = getattr(msg, "additional_kwargs", None) or {}
         messages.append(
             ChatMessage(
                 id=getattr(msg, "id", f"msg_{len(messages)}"),
                 type=msg.type if hasattr(msg, "type") else "unknown",
                 content=msg.content if hasattr(msg, "content") else str(msg),
                 timestamp=None,  # LangChain messages don't have timestamps by default
+                toolCalls=kwargs.get("tool_calls") or None,
             )
         )
     return messages

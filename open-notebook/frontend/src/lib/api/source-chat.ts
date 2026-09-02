@@ -1,4 +1,5 @@
 import apiClient from './client'
+import { getApiUrl } from '@/lib/config'
 import { getAuthToken } from '@/lib/auth-token'
 import {
   SourceChatSession,
@@ -47,13 +48,16 @@ export const sourceChatApi = {
   },
 
   // Messaging with streaming
-  sendMessage: (sourceId: string, sessionId: string, data: SendMessageRequest) => {
+  sendMessage: async (sourceId: string, sessionId: string, data: SendMessageRequest) => {
     // Get auth token using the same logic as apiClient interceptor
     const token = getAuthToken()
 
-    // Use relative URL to leverage Next.js rewrites
-    // This works both in dev (Next.js proxy) and production (Docker network)
-    const url = `/api/sources/${sourceId}/chat/sessions/${sessionId}/messages`
+    // Absolute URL like apiClient (getApiUrl) - the Next.js dev-server rewrite
+    // buffers SSE responses (no incremental flush), which kills the streaming
+    // UX. The production standalone server (8502) proxies fine, but the dev
+    // path must bypass it and hit the API directly.
+    const apiUrl = await getApiUrl()
+    const url = `${apiUrl}/api/sources/${sourceId}/chat/sessions/${sessionId}/messages`
 
     // Use fetch with ReadableStream for SSE
     return fetch(url, {
