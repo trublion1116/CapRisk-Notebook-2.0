@@ -1,6 +1,9 @@
+import asyncio
+
 from deepagents import create_deep_agent
 from langchain_core.tools import tool
 
+from app.jobs import create_job
 from app.llm import build_llm
 from app.on_client import OpenNotebookClient
 from app.subagents import (
@@ -14,7 +17,15 @@ CHAT_PREAMBLE = """\
 
 - 回答要基于系统提示中提供的笔记本上下文（源材料、笔记、洞察）。
 - 引用具体材料时注明来源；如果上下文不足以回答，明确说明，不要编造。
-- 用中文回答，专业、直接、有信息量。\
+- 用中文回答，专业、直接、有信息量。
+
+意图识别——提取核心观点：
+- 当用户要求"提取核心观点 / 提取观点 / 生成见解 / 分析这份报告的核心观点"等类似任务时，
+  这是一项异步提取任务，不要自己长篇摘抄，而是走工具流程：
+  1. 若用户未指明哪份报告或上下文中有多个来源，先调用 list_sources 让用户确认或自行匹配；
+  2. 调用 start_core_viewpoint_extraction 启动提取任务（后台异步执行，几分钟完成）；
+  3. 告知用户任务已启动、job_id 是什么、结果会自动写回该来源的"见解"列表，稍后在界面刷新查看。
+- 普通问答、总结、分析类请求不需要调用工具，直接回答。\
 """
 
 ORCHESTRATOR_PROMPT_TEMPLATE = """\
@@ -60,11 +71,55 @@ def build_orchestrator_prompt(
 
 
 def build_chat_agent():
-    """Chat agent used by the /chat endpoint (ON proxies notebook chat here)."""
+    """Chat agent used by the /chat endpoint (ON proxies notebook chat here).
+
+    Besides Q&A over the notebook context, it recognizes the "extract core
+    viewpoints" intent and starts the async extraction pipeline via tools.
+    """
+    # Deferred import: runner imports this module at top level
+    from app.runner import run_extraction_job
+
+    client = OpenNotebookClient()
+
+    @tool
+    async def list_sources() -> str:
+        """列出 OpenNotebook 中的所有来源（id、标题、类型、见解数）。
+
+        用于确定用户要对哪份报告做核心观点提取。
+        """
+        sources = await client.list_sources()
+        if not sources:
+            return "当前笔记本没有任何来源。"
+        lines = []
+        for s in sources:
+            lines.append(
+                f"- id={s['id']} | {s.get('title') or '(无标题)'} "
+                f"| type={s.get('type')} | insights={s.get('insights_count')}"
+            )
+        return "\n".join(lines)
+
+    @tool
+    async def start_core_viewpoint_extraction(
+        source_id: str,
+        insight_type: str = "核心观点",
+    ) -> str:
+        """对指定来源启动异步的核心观点提取任务（后台执行，几分钟完成）。
+
+        Args:
+            source_id: 来源的 id（从 list_sources 获得）。
+            insight_type: 写回 OpenNotebook 时的见解类型标签，默认"核心观点"。
+        """
+        job = create_job(source_id, insight_type)
+        asyncio.create_task(run_extraction_job(job))
+        return (
+            f"提取任务已启动: job_id={job.id}。后台异步执行中，"
+            f"完成后见解会自动写回来源的见解列表。"
+        )
+
     return create_deep_agent(
         model=build_llm(max_tokens=8192),
         system_prompt=CHAT_PREAMBLE,
-        tools=[],
+        tools=[list_sources, start_core_viewpoint_extraction],
     )
 
 

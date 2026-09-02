@@ -37,6 +37,13 @@ class OpenNotebookClient:
         except httpx.HTTPError as e:
             raise OpenNotebookError(f"OpenNotebook API call failed ({url}): {e}") from e
 
+    async def list_sources(self, limit: int = 100) -> list[dict[str, Any]]:
+        """List sources (id/title/type) for intent resolution in chat."""
+        response = await self._request(
+            "GET", "/api/sources", params={"limit": limit, "sort_by": "updated"}
+        )
+        return response.json()
+
     async def get_source(self, source_id: str) -> dict[str, Any]:
         response = await self._request("GET", f"/api/sources/{source_id}")
         return response.json()

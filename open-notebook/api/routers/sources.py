@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from typing import Any, List, Optional
 
+import httpx
 from content_core import check_file_support
 from fastapi import (
     APIRouter,
@@ -32,11 +33,17 @@ from api.models import (
     SourceUpdate,
 )
 from commands.source_commands import SourceProcessingInput
-from open_notebook.config import UPLOADS_FOLDER
+from open_notebook.config import (
+    AGENT_SERVICE_TOKEN,
+    AGENT_SERVICE_URL,
+    UPLOADS_FOLDER,
+)
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Asset, Notebook, Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import (
+    ConfigurationError,
+    ExternalServiceError,
     InvalidInputError,
     NotFoundError,
     OpenNotebookError,
@@ -44,6 +51,11 @@ from open_notebook.exceptions import (
 )
 
 router = APIRouter()
+
+# Fork: pseudo-transformation name that proxies insight generation to the
+# external agent service (/extract) instead of the native transformation
+# pipeline. The transformation title is passed through as the insight_type.
+AGENT_EXTRACT_TRANSFORMATION = "agent_extract"
 
 
 async def _assert_file_supported(file_path: str) -> None:
@@ -1101,6 +1113,54 @@ async def get_source_insights(source_id: str):
         raise HTTPException(status_code=500, detail="Error fetching insights")
 
 
+async def _start_agent_extraction(
+    source_id: str, transformation: Transformation
+) -> InsightCreationResponse:
+    """Proxy insight generation to the external agent service (/extract).
+
+    Fork: the `agent_extract` pseudo-transformation runs the multi-agent
+    extraction pipeline in the external treasury agent service instead of the
+    native transformation graph. The service returns immediately with a job
+    id; insights are written back asynchronously via POST /api/insights.
+    """
+    if not AGENT_SERVICE_URL:
+        raise ConfigurationError(
+            "Transformation requires the external agent service, but "
+            "OPEN_NOTEBOOK_AGENT_URL is not configured"
+        )
+
+    headers = {}
+    if AGENT_SERVICE_TOKEN:
+        headers["Authorization"] = f"Bearer {AGENT_SERVICE_TOKEN}"
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                f"{AGENT_SERVICE_URL}/extract",
+                json={
+                    "source_id": source_id,
+                    "insight_type": transformation.title,
+                },
+                headers=headers,
+            )
+            response.raise_for_status()
+            data = response.json()
+    except httpx.HTTPError as e:
+        raise ExternalServiceError(
+            f"Agent service extract request failed: {e}"
+        ) from e
+
+    job_id = data.get("job_id")
+    logger.info(f"Agent extraction job {job_id} started for source {source_id}")
+    return InsightCreationResponse(
+        status="pending",
+        message="Agent extraction started",
+        source_id=source_id,
+        transformation_id=transformation.id or "",
+        command_id=str(job_id) if job_id else None,
+    )
+
+
 @router.post(
     "/sources/{source_id}/insights",
     response_model=InsightCreationResponse,
@@ -1124,6 +1184,11 @@ async def create_source_insight(source_id: str, request: CreateSourceInsightRequ
         transformation = await Transformation.get(request.transformation_id)
         if not transformation:
             raise HTTPException(status_code=404, detail="Transformation not found")
+
+        # Fork: agent_extract pseudo-transformation proxies to the external
+        # agent service instead of running the native pipeline
+        if transformation.name == AGENT_EXTRACT_TRANSFORMATION:
+            return await _start_agent_extraction(source_id, transformation)
 
         # Submit transformation as background job (fire-and-forget)
         command_id = submit_command(
