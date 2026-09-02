@@ -464,6 +464,8 @@ export const deDE = {
     sessionCreated: "Chat-Sitzung erstellt",
     sessionUpdated: "Sitzung aktualisiert",
     sessionDeleted: "Sitzung gelöscht",
+    toolCallArgs: "Argumente",
+    toolCallResult: "Ergebnis",
   },
   searchPage: {
     askAndSearch: "Fragen und Suchen",

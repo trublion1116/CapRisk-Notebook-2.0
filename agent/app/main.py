@@ -1,14 +1,19 @@
+import logging
 import os
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from app import config
 from app.agents import build_chat_agent
+from app.chat_stream import stream_chat_turn
 from app.jobs import create_job, get_job
 from app.runner import run_extraction_job
 from app.tracing import new_handler, traced
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Treasury Agent",
@@ -58,16 +63,12 @@ class ChatTurnResponse(BaseModel):
     content: str
 
 
-@app.post("/chat", response_model=ChatTurnResponse)
-async def chat(
-    request: ChatTurnRequest, _: None = Depends(check_auth)
-) -> ChatTurnResponse:
-    """Answer a notebook chat turn proxied from OpenNotebook."""
-    require_llm()
-    print("chat request:", request.dict())
+def to_lc_messages(request: ChatTurnRequest) -> list:
+    """Convert a proxied chat turn into LangChain messages.
 
-    # The chat agent's own system prompt (CHAT_PREAMPT) is set in
-    # build_chat_agent; here we only inject the notebook context ON built.
+    The chat agent's own system prompt (CHAT_PREAMPT) is set in
+    build_chat_agent; here we only inject the notebook context ON built.
+    """
     lc_messages: list = []
     if request.system_prompt:
         lc_messages.append(SystemMessage(content=request.system_prompt))
@@ -80,7 +81,18 @@ async def chat(
             lc_messages.append(HumanMessage(content=content))
         elif role in ("ai", "assistant"):
             lc_messages.append(AIMessage(content=content))
+    return lc_messages
 
+
+@app.post("/chat", response_model=ChatTurnResponse)
+async def chat(
+    request: ChatTurnRequest, _: None = Depends(check_auth)
+) -> ChatTurnResponse:
+    """Answer a notebook chat turn proxied from OpenNotebook."""
+    require_llm()
+    print("chat request:", request.dict())
+
+    lc_messages = to_lc_messages(request)
     if not lc_messages or all(isinstance(m, SystemMessage) for m in lc_messages):
         raise HTTPException(status_code=400, detail="No user message provided")
 
@@ -113,6 +125,57 @@ async def chat(
         span.update(output={"content": content})
 
     return ChatTurnResponse(content=content)
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: ChatTurnRequest, _: None = Depends(check_auth)):
+    """SSE variant of /chat: streams tokens and tool-call events.
+
+    Events (one JSON object per `data:` line):
+      token / tool_call / tool_result / final / error
+    """
+    require_llm()
+
+    lc_messages = to_lc_messages(request)
+    if not lc_messages or all(isinstance(m, SystemMessage) for m in lc_messages):
+        raise HTTPException(status_code=400, detail="No user message provided")
+
+    agent = get_chat_agent()
+    last_user_message = next(
+        (
+            m.get("content", "")
+            for m in reversed(request.messages)
+            if m.get("role") in ("human", "user") and m.get("content")
+        ),
+        "",
+    )
+    span_cm = traced(
+        "chat-response",
+        session_id=request.thread_id or None,
+        tags=["chat", "stream"],
+        input={"message": last_user_message},
+        metadata={"model": config.LLM_MODEL},
+    )
+
+    async def generator():
+        with span_cm as span:
+            async for line in stream_chat_turn(
+                agent, lc_messages, callbacks=[new_handler()]
+            ):
+                if '"type": "final"' in line:
+                    # tag the trace output before closing the span
+                    try:
+                        import json as _json
+
+                        payload = _json.loads(line[6:].strip())
+                        span.update(output={"content": payload.get("content")})
+                    except (ValueError, KeyError):  # best-effort tracing only
+                        logger.debug("could not tag trace output from final event")
+                yield line
+
+    return StreamingResponse(
+        generator(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
+    )
 
 
 class ExtractRequest(BaseModel):

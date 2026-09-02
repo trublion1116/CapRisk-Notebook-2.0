@@ -172,7 +172,8 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     return response.context
   }, [notebookId, sources, notes, contextSelections])
 
-  // Send message (synchronous, no streaming)
+  // Send message (SSE streaming with tool-call events; falls back to
+  // displaying the final answer when no intermediate events arrive)
   const sendMessage = useCallback(async (message: string, modelOverride?: string) => {
     let sessionId = currentSessionId
 
@@ -212,27 +213,124 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     setMessages(prev => [...prev, userMessage])
     setIsSending(true)
 
+    // Streaming AI message (created on first event, then updated in place)
+    const aiMessageId = `ai-${Date.now()}`
+    let streamError: string | null = null
+
+    // Ensure the AI bubble exists, then apply `apply` to it (functional)
+    const updateAiMessage = (apply: (msg: NotebookChatMessage) => NotebookChatMessage) => {
+      setMessages(prev => {
+        if (!prev.some(msg => msg.id === aiMessageId)) {
+          return [...prev, apply({
+            id: aiMessageId,
+            type: 'ai',
+            content: '',
+            timestamp: new Date().toISOString()
+          })]
+        }
+        return prev.map(msg => msg.id === aiMessageId ? apply(msg) : msg)
+      })
+    }
+
     try {
       // Build context and send message
       const context = await buildContext()
-      const response = await chatApi.sendMessage({
+      const body = await chatApi.sendMessageStream({
         session_id: sessionId,
         message,
         context,
         model_override: modelOverride ?? (currentSession?.model_override ?? undefined)
       })
 
-      // Update messages with API response
-      setMessages(response.messages)
+      const reader = body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
 
-      // Refetch current session to get updated data
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        // Keep the last incomplete line in the buffer
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const jsonStr = line.slice(6).trim()
+          if (!jsonStr) continue
+
+          let data: {
+            type: string
+            content?: string
+            id?: string
+            name?: string
+            args?: Record<string, unknown>
+            status?: 'running' | 'success' | 'error'
+            result?: string
+            message?: string
+          }
+          try {
+            data = JSON.parse(jsonStr)
+          } catch (e) {
+            if (e instanceof SyntaxError) {
+              console.error('Error parsing SSE data:', e, 'Line:', line)
+              continue
+            }
+            throw e
+          }
+
+          if (data.type === 'token') {
+            updateAiMessage(msg => ({ ...msg, content: msg.content + (data.content || '') }))
+          } else if (data.type === 'tool_call') {
+            updateAiMessage(msg => ({
+              ...msg,
+              toolCalls: [
+                ...(msg.toolCalls || []),
+                {
+                  id: data.id,
+                  name: data.name || '',
+                  args: data.args,
+                  status: 'running' as const
+                }
+              ]
+            }))
+          } else if (data.type === 'tool_result') {
+            updateAiMessage(msg => {
+              const toolCalls = (msg.toolCalls || []).map(tc =>
+                tc.id === data.id || (!tc.id && tc.name === data.name && tc.status === 'running')
+                  ? { ...tc, status: data.status || 'success', result: data.content }
+                  : tc
+              )
+              return { ...msg, toolCalls }
+            })
+          } else if (data.type === 'final') {
+            // Final answer is the source of truth (tokens may drop mid-stream)
+            if (data.content) {
+              updateAiMessage(msg => ({ ...msg, content: data.content || msg.content }))
+            }
+          } else if (data.type === 'complete') {
+            // handled after the loop
+          } else if (data.type === 'error') {
+            streamError = data.message || 'Stream error occurred'
+          }
+        }
+      }
+
+      if (streamError) {
+        throw new Error(streamError)
+      }
+
+      // Refetch current session to get the checkpointed history
       await refetchCurrentSession()
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
       console.error('Error sending message:', error)
       toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToSendMessage'))
-      // Remove optimistic message on error
+      // Remove optimistic messages on error
       setMessages(prev => prev.filter(msg => !msg.id.startsWith('temp-')))
+      // Drop a partially-streamed AI bubble so history stays clean
+      setMessages(prev => prev.filter(msg => msg.id !== aiMessageId))
     } finally {
       setIsSending(false)
     }

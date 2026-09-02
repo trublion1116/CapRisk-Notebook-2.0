@@ -7,12 +7,13 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock } from 'lucide-react'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Wrench } from 'lucide-react'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import {
   SourceChatMessage,
   SourceChatContextIndicator,
-  BaseChatSession
+  BaseChatSession,
+  ChatToolCall
 } from '@/lib/types/api'
 import { ModelSelector } from './ModelSelector'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
@@ -341,6 +342,9 @@ const ChatMessage = memo(function ChatMessage({
         </div>
       )}
       <div className="flex flex-col gap-2 max-w-[80%]">
+        {message.type === 'ai' && message.toolCalls && message.toolCalls.length > 0 && (
+          <ToolCallTray toolCalls={message.toolCalls} />
+        )}
         <div
           className={`rounded-lg px-4 py-2 border ${
             message.type === 'human'
@@ -374,6 +378,49 @@ const ChatMessage = memo(function ChatMessage({
     </div>
   )
 })
+
+// Tool-call tray above an AI bubble: shows what tools the agent invoked and
+// their (truncated) results while a streamed answer is being produced.
+function ToolCallTray({ toolCalls }: { toolCalls: ChatToolCall[] }) {
+  const { t } = useTranslation()
+  return (
+    <div className="flex flex-col gap-1" data-testid="chat-tool-calls">
+      {toolCalls.map((tc, i) => (
+        <details
+          key={tc.id ?? i}
+          className="rounded border bg-muted/50 px-2 py-1 text-xs"
+        >
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 font-mono text-muted-foreground">
+            <Wrench className="h-3 w-3 shrink-0" />
+            <span>{tc.name}</span>
+            {tc.status === 'running' && (
+              <Loader2 className="h-3 w-3 animate-spin text-teal" />
+            )}
+            {tc.status === 'error' && (
+              <span className="font-sans text-red-500">✕</span>
+            )}
+          </summary>
+          <div className="mt-1 space-y-1 pl-4 break-all opacity-70">
+            {tc.args && Object.keys(tc.args).length > 0 && (
+              <div>
+                <span className="font-semibold">{t('chat.toolCallArgs')}</span>
+                <pre className="mt-0.5 whitespace-pre-wrap font-mono">
+                  {JSON.stringify(tc.args, null, 2)}
+                </pre>
+              </div>
+            )}
+            {tc.result && (
+              <div>
+                <span className="font-semibold">{t('chat.toolCallResult')}</span>
+                <pre className="mt-0.5 whitespace-pre-wrap font-mono">{tc.result}</pre>
+              </div>
+            )}
+          </div>
+        </details>
+      ))}
+    </div>
+  )
+}
 
 // Helper component to render AI messages with clickable references
 function AIMessageContent({

@@ -461,6 +461,8 @@ export const zhTW = {
     sessionCreated: "聊天會話已建立",
     sessionUpdated: "會話已更新",
     sessionDeleted: "會話已刪除",
+    toolCallArgs: "參數",
+    toolCallResult: "結果",
   },
   searchPage: {
     askAndSearch: "提問與搜尋",

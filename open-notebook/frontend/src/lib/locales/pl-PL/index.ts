@@ -461,6 +461,8 @@ export const plPL = {
     sessionCreated: "Utworzono sesję czatu",
     sessionUpdated: "Zaktualizowano sesję",
     sessionDeleted: "Usunięto sesję",
+    toolCallArgs: "Argumenty",
+    toolCallResult: "Wynik",
   },
   searchPage: {
     askAndSearch: "Pytaj i szukaj",

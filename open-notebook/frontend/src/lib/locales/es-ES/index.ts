@@ -461,6 +461,8 @@ export const esES = {
     sessionCreated: "Sesión de chat creada",
     sessionUpdated: "Sesión actualizada",
     sessionDeleted: "Sesión eliminada",
+    toolCallArgs: "Argumentos",
+    toolCallResult: "Resultado",
   },
   searchPage: {
     askAndSearch: "Preguntar y buscar",

@@ -153,11 +153,21 @@ export interface SourceChatSession extends BaseChatSession {
   model_override?: string
 }
 
+// Tool-call lifecycle info attached to AI messages (streamed chats only)
+export interface ChatToolCall {
+  id?: string
+  name: string
+  args?: Record<string, unknown>
+  status: 'running' | 'success' | 'error'
+  result?: string
+}
+
 export interface SourceChatMessage {
   id: string
   type: 'human' | 'ai'
   content: string
   timestamp?: string
+  toolCalls?: ChatToolCall[]
 }
 
 export interface SourceChatContextIndicator {
@@ -205,6 +215,7 @@ export interface NotebookChatMessage {
   type: 'human' | 'ai'
   content: string
   timestamp?: string
+  toolCalls?: ChatToolCall[]
 }
 
 export interface NotebookChatSessionWithMessages extends NotebookChatSession {

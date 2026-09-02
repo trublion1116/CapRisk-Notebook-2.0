@@ -461,6 +461,8 @@ export const ptBR = {
     sessionCreated: "Sessão de chat criada",
     sessionUpdated: "Sessão atualizada",
     sessionDeleted: "Sessão excluída",
+    toolCallArgs: "Argumentos",
+    toolCallResult: "Resultado",
   },
   searchPage: {
     askAndSearch: "Perguntar e Buscar",

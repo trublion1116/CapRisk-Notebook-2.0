@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sqlite3
 from typing import Annotated, Optional
 
@@ -7,6 +8,7 @@ from ai_prompter import Prompter
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
@@ -33,17 +35,15 @@ class ThreadState(TypedDict):
     model_override: Optional[str]
 
 
-def _invoke_agent_service(system_prompt: str, messages: list, thread_id: str) -> str:
-    """Proxy the chat turn to the external agent service.
-
-    The service receives the notebook-context system prompt plus the full
-    conversation history (ON's LangGraph checkpoint remains the source of
-    truth), and returns the agent's final answer.
-    """
+def _agent_service_headers() -> dict:
     headers = {}
     if AGENT_SERVICE_TOKEN:
         headers["Authorization"] = f"Bearer {AGENT_SERVICE_TOKEN}"
-    payload = {
+    return headers
+
+
+def _agent_service_payload(system_prompt: str, messages: list, thread_id: str) -> dict:
+    return {
         "thread_id": thread_id,
         "system_prompt": system_prompt,
         "messages": [
@@ -51,11 +51,70 @@ def _invoke_agent_service(system_prompt: str, messages: list, thread_id: str) ->
             for m in messages
         ],
     }
+
+
+def _stream_agent_service(system_prompt: str, messages: list, thread_id: str) -> str:
+    """Proxy the chat turn to the external agent service's SSE endpoint.
+
+    Intermediate events (tokens, tool calls) are forwarded through the
+    LangGraph stream writer (custom stream mode) so streaming consumers can
+    render them; the final answer text is returned for the node state.
+
+    Under a plain (non-streaming) invoke the writer is a no-op, so this path
+    behaves like the old synchronous proxy.
+    """
+    try:
+        writer = get_stream_writer()
+    except RuntimeError:  # no stream context (plain invoke) - events dropped
+        writer = lambda event: None  # noqa: E731
+
+    try:
+        with httpx.Client(timeout=AGENT_SERVICE_TIMEOUT) as client:
+            with client.stream(
+                "POST",
+                f"{AGENT_SERVICE_URL}/chat/stream",
+                json=_agent_service_payload(system_prompt, messages, thread_id),
+                headers=_agent_service_headers(),
+            ) as response:
+                response.raise_for_status()
+                final_content = ""
+                error_event = None
+                for line in response.iter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    try:
+                        event = json.loads(line[len("data: ") :])
+                    except json.JSONDecodeError:
+                        continue
+                    event_type = event.get("type")
+                    if event_type == "final":
+                        final_content = event.get("content") or ""
+                    elif event_type == "error":
+                        error_event = event.get("message") or "agent error"
+                    else:
+                        writer(event)
+    except httpx.HTTPError as e:
+        raise ExternalServiceError(f"Agent service request failed: {e}") from e
+
+    if error_event is not None:
+        raise ExternalServiceError(f"Agent service failed: {error_event}")
+    if not final_content.strip():
+        raise ExternalServiceError("Agent service returned an empty response")
+    return final_content
+
+
+def _invoke_agent_service(system_prompt: str, messages: list, thread_id: str) -> str:
+    """Proxy the chat turn to the external agent service.
+
+    The service receives the notebook-context system prompt plus the full
+    conversation history (ON's LangGraph checkpoint remains the source of
+    truth), and returns the agent's final answer.
+    """
     try:
         response = httpx.post(
             f"{AGENT_SERVICE_URL}/chat",
-            json=payload,
-            headers=headers,
+            json=_agent_service_payload(system_prompt, messages, thread_id),
+            headers=_agent_service_headers(),
             timeout=AGENT_SERVICE_TIMEOUT,
         )
         response.raise_for_status()
@@ -74,7 +133,7 @@ def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict
 
         if AGENT_SERVICE_URL:
             thread_id = str(config.get("configurable", {}).get("thread_id", ""))
-            content = _invoke_agent_service(
+            content = _stream_agent_service(
                 system_prompt, state.get("messages", []), thread_id
             )
             return {"messages": AIMessage(content=clean_thinking_content(content))}

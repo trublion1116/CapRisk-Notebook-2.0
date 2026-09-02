@@ -1,4 +1,6 @@
 import apiClient from './client'
+import { getApiUrl } from '@/lib/config'
+import { getAuthToken } from '@/lib/auth-token'
 import {
   NotebookChatSession,
   NotebookChatSessionWithMessages,
@@ -57,6 +59,31 @@ export const chatApi = {
       data
     )
     return response.data
+  },
+
+  // Messaging (SSE streaming: tokens + tool-call events, see
+  // POST /api/chat/execute/stream). Returns the raw body for the caller
+  // to consume `data:` lines.
+  sendMessageStream: async (data: SendNotebookChatMessageRequest) => {
+    const token = getAuthToken()
+    // Absolute URL like apiClient (getApiUrl) - avoids relying on the
+    // Next.js /api rewrites, which behave differently between `next dev`
+    // and the production standalone server.
+    const apiUrl = await getApiUrl()
+
+    return fetch(`${apiUrl}/api/chat/execute/stream`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      },
+      body: JSON.stringify(data)
+    }).then(response => {
+      if (!response.ok || !response.body) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return response.body
+    })
   },
 
   buildContext: async (data: BuildContextRequest) => {

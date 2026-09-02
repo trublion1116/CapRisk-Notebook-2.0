@@ -459,6 +459,8 @@ export const enUS = {
     sessionCreated: "Chat session created",
     sessionUpdated: "Session updated",
     sessionDeleted: "Session deleted",
+    toolCallArgs: "Args",
+    toolCallResult: "Result",
   },
   searchPage: {
     askAndSearch: "Ask and Search",
