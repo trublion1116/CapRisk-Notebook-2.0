@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import AsyncGenerator, List, Optional
+from typing import Any, AsyncGenerator, List, Optional
 
 from fastapi import APIRouter, HTTPException, Path
 from fastapi.responses import StreamingResponse
@@ -23,6 +23,7 @@ from open_notebook.exceptions import (
     OpenNotebookError,
 )
 from open_notebook.graphs.source_chat import source_chat_graph as source_chat_graph
+from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.graph_utils import get_session_message_count
 
 router = APIRouter()
@@ -332,7 +333,13 @@ async def delete_source_chat_session(
 async def stream_source_chat_response(
     session_id: str, source_id: str, message: str, model_override: Optional[str] = None
 ) -> AsyncGenerator[str, None]:
-    """Stream the source chat response as Server-Sent Events."""
+    """Stream the source chat response as Server-Sent Events.
+
+    Fork: when an agent service is configured the graph node forwards its
+    SSE events (tokens, tool calls) via the custom stream mode; they are
+    passed through here. The final answer also arrives as the legacy
+    ``ai_message`` event so older clients keep working.
+    """
     try:
         # Get current state
         # Use sync get_state() in a thread since SqliteSaver doesn't support async
@@ -355,39 +362,73 @@ async def stream_source_chat_response(
         user_event = {"type": "user_message", "content": message, "timestamp": None}
         yield f"data: {json.dumps(user_event)}\n\n"
 
-        # Run the synchronous LangGraph invoke in a thread so it doesn't block the
-        # event loop. While blocked, even the already-yielded SSE events can't
-        # flush and every other request stalls until the LLM finishes. Mirrors the
-        # get_state() calls above.
-        # The lambda pins down which `invoke` overload is used; asyncio.to_thread
-        # can't resolve overloaded callables on its own. The ignore is a langgraph
-        # typing limitation: it accepts a partial state dict at runtime, but the
-        # signature requires the full state type.
-        result = await asyncio.to_thread(
-            lambda: source_chat_graph.invoke(
-                input=state_values,  # type: ignore[arg-type]
-                config=RunnableConfig(
-                    configurable={"thread_id": session_id, "model_id": model_override}
-                ),
-            )
-        )
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue = asyncio.Queue()
+        done = object()
 
-        # Stream the complete AI response
-        if "messages" in result:
-            for msg in result["messages"]:
-                if hasattr(msg, "type") and msg.type == "ai":
-                    ai_event = {
-                        "type": "ai_message",
-                        "content": msg.content if hasattr(msg, "content") else str(msg),
-                        "timestamp": None,
-                    }
-                    yield f"data: {json.dumps(ai_event)}\n\n"
+        def emit(event: Any) -> None:
+            loop.call_soon_threadsafe(queue.put_nowait, event)
+
+        def run_graph() -> None:
+            try:
+                # custom = agent passthrough events; values = final state
+                for mode, chunk in source_chat_graph.stream(
+                    input=state_values,  # type: ignore[arg-type]
+                    config=RunnableConfig(
+                        configurable={
+                            "thread_id": session_id,
+                            "model_id": model_override,
+                        }
+                    ),
+                    stream_mode=["custom", "values"],
+                ):
+                    if mode == "custom" and chunk is not None:
+                        emit(chunk)
+                    elif mode == "values":
+                        emit({"type": "_state", "state": chunk})
+            except Exception as e:  # noqa: BLE001 - stream boundary
+                emit({"type": "error", "message": classify_error(e)[1]})
+            finally:
+                emit(done)
+
+        # Keep a reference: an unreferenced task can be garbage-collected
+        graph_task = loop.create_task(asyncio.to_thread(run_graph))
+
+        final_state: dict = {}
+        while True:
+            event = await queue.get()
+            if event is done:
+                break
+            if isinstance(event, dict) and event.get("type") == "_state":
+                final_state = event.get("state") or {}
+                continue
+            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+        if graph_task.done() and not graph_task.cancelled():
+            graph_task.result()
+
+        # Final answer as the legacy ai_message event (clients that only know
+        # the old protocol still render the complete response)
+        final_text = ""
+        for msg in reversed(final_state.get("messages", [])):
+            if getattr(msg, "type", "") == "ai":
+                content = getattr(msg, "content", "")
+                if isinstance(content, list):
+                    content = "".join(
+                        part.get("text", "") if isinstance(part, dict) else str(part)
+                        for part in content
+                    )
+                final_text = content
+                break
+        if final_text:
+            ai_event = {"type": "ai_message", "content": final_text, "timestamp": None}
+            yield f"data: {json.dumps(ai_event)}\n\n"
 
         # Stream context indicators
-        if "context_indicators" in result:
+        if "context_indicators" in final_state:
             context_event = {
                 "type": "context_indicators",
-                "data": result["context_indicators"],
+                "data": final_state["context_indicators"],
             }
             yield f"data: {json.dumps(context_event)}\n\n"
 
@@ -396,8 +437,6 @@ async def stream_source_chat_response(
         yield f"data: {json.dumps(completion_event)}\n\n"
 
     except Exception as e:
-        from open_notebook.utils.error_classifier import classify_error
-
         _, error_message = classify_error(e)
         logger.error(f"Error in source chat streaming: {str(e)}")
         error_event = {"type": "error", "message": error_message}

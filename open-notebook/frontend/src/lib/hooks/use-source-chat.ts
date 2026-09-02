@@ -131,6 +131,23 @@ export function useSourceChat(sourceId: string) {
     setMessages(prev => [...prev, userMessage])
     setIsStreaming(true)
 
+    // Streaming AI message (created on first event, then updated in place)
+    const aiMessageId = `ai-${Date.now()}`
+
+    const updateAiMessage = (apply: (msg: SourceChatMessage) => SourceChatMessage) => {
+      setMessages(prev => {
+        if (!prev.some(msg => msg.id === aiMessageId)) {
+          return [...prev, apply({
+            id: aiMessageId,
+            type: 'ai',
+            content: '',
+            timestamp: new Date().toISOString()
+          })]
+        }
+        return prev.map(msg => msg.id === aiMessageId ? apply(msg) : msg)
+      })
+    }
+
     try {
       const response = await sourceChatApi.sendMessage(sourceId, sessionId, {
         message,
@@ -143,53 +160,82 @@ export function useSourceChat(sourceId: string) {
 
       const reader = response.getReader()
       const decoder = new TextDecoder()
-      let aiMessage: SourceChatMessage | null = null
+      let buffer = ''
+      let streamError: string | null = null
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
-        const text = decoder.decode(value)
-        const lines = text.split('\n')
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        // Keep the last incomplete line in the buffer
+        buffer = lines.pop() || ''
 
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              
-              if (data.type === 'ai_message') {
-                // Create AI message on first content chunk to avoid empty bubble
-                if (!aiMessage) {
-                  aiMessage = {
-                    id: `ai-${Date.now()}`,
-                    type: 'ai',
-                    content: data.content || '',
-                    timestamp: new Date().toISOString()
-                  }
-                  setMessages(prev => [...prev, aiMessage!])
-                } else {
-                  aiMessage.content += data.content || ''
-                  setMessages(prev =>
-                    prev.map(msg => msg.id === aiMessage!.id
-                      ? { ...msg, content: aiMessage!.content }
-                      : msg
-                    )
-                  )
-                }
-              } else if (data.type === 'context_indicators') {
-                setContextIndicators(data.data)
-              } else if (data.type === 'error') {
-                throw new Error(data.message || 'Stream error')
-              }
-            } catch (e) {
-              if (e instanceof SyntaxError) {
-                console.error('Error parsing SSE data:', e)
-              } else {
-                throw e
-              }
+          if (!line.startsWith('data: ')) continue
+          const jsonStr = line.slice(6).trim()
+          if (!jsonStr) continue
+
+          let data: {
+            type: string
+            content?: string
+            id?: string
+            name?: string
+            args?: Record<string, unknown>
+            status?: 'running' | 'success' | 'error'
+            data?: unknown
+            message?: string
+          }
+          try {
+            data = JSON.parse(jsonStr)
+          } catch (e) {
+            if (e instanceof SyntaxError) {
+              console.error('Error parsing SSE data:', e, 'Line:', line)
+              continue
             }
+            throw e
+          }
+
+          if (data.type === 'token') {
+            // Fork: streamed answer chunk from the agent service
+            updateAiMessage(msg => ({ ...msg, content: msg.content + (data.content || '') }))
+          } else if (data.type === 'tool_call') {
+            updateAiMessage(msg => ({
+              ...msg,
+              toolCalls: [
+                ...(msg.toolCalls || []),
+                { id: data.id, name: data.name || '', args: data.args, status: 'running' as const }
+              ]
+            }))
+          } else if (data.type === 'tool_result') {
+            updateAiMessage(msg => {
+              const toolCalls = (msg.toolCalls || []).map(tc =>
+                tc.id === data.id || (!tc.id && tc.name === data.name && tc.status === 'running')
+                  ? { ...tc, status: data.status || 'success', result: data.content }
+                  : tc
+              )
+              return { ...msg, toolCalls }
+            })
+          } else if (data.type === 'final') {
+            // Final answer is the source of truth (tokens may drop mid-stream)
+            if (data.content) {
+              updateAiMessage(msg => ({ ...msg, content: data.content || msg.content }))
+            }
+          } else if (data.type === 'ai_message') {
+            // Legacy complete-response event: replace content (also serves
+            // as the authoritative final answer for older backend paths)
+            updateAiMessage(msg => ({ ...msg, content: data.content || msg.content }))
+          } else if (data.type === 'context_indicators') {
+            setContextIndicators(data.data as SourceChatContextIndicator | null)
+          } else if (data.type === 'error') {
+            streamError = data.message || 'Stream error'
           }
         }
+      }
+
+      if (streamError) {
+        throw new Error(streamError)
       }
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
@@ -197,6 +243,8 @@ export function useSourceChat(sourceId: string) {
       toast.error(getApiErrorMessage(error.response?.data?.detail || error.message, (key) => t(key), 'apiErrors.failedToSendMessage'))
       // Remove optimistic messages on error
       setMessages(prev => prev.filter(msg => !msg.id.startsWith('temp-')))
+      // Drop a partially-streamed AI bubble so history stays clean
+      setMessages(prev => prev.filter(msg => msg.id !== aiMessageId))
     } finally {
       setIsStreaming(false)
       // Refetch session to get persisted messages

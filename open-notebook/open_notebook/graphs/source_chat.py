@@ -14,7 +14,7 @@ from open_notebook.ai.provision import provision_langchain_model
 from open_notebook.config import AGENT_SERVICE_URL, LANGGRAPH_CHECKPOINT_FILE
 from open_notebook.domain.notebook import Source, SourceInsight
 from open_notebook.exceptions import OpenNotebookError
-from open_notebook.graphs.chat import _invoke_agent_service
+from open_notebook.graphs.chat import _stream_agent_service
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.context_builder import (
     build_source_context,
@@ -153,9 +153,11 @@ def _call_model_with_source_context_inner(
     # Proxy the turn to the external agent service when configured. The
     # system prompt already carries the full source context and insights,
     # so the agent answers with the same grounding as the local path.
+    # Streaming variant: intermediate events (tokens/tool calls) are
+    # forwarded via the LangGraph stream writer; the final text returns.
     if AGENT_SERVICE_URL:
         thread_id = str(config.get("configurable", {}).get("thread_id", ""))
-        content = _invoke_agent_service(
+        content = _stream_agent_service(
             system_prompt, state.get("messages", []), thread_id
         )
         return {
