@@ -139,6 +139,25 @@ async def test_stream_chat_turn_full_lifecycle():
     assert final["content"] == "最终回答：BIS 报告共 1 个来源。"
 
 
+async def test_stream_chat_turn_passes_custom_events_through():
+    """custom-mode events (nested pipeline via get_stream_writer) are
+    forwarded as-is so the frontend renders them as tool cards."""
+    chunks = [
+        ("custom", {"type": "tool_call", "id": "t1", "name": "task", "args": {"batch": "0-14"}}),
+        ("custom", {"type": "tool_result", "id": "t1", "name": "task", "content": "...", "status": "success"}),
+        (
+            "updates",
+            {"model": {"messages": [AIMessage(content="提取完成")]}},
+        ),
+    ]
+    lines = [line async for line in stream_chat_turn(_FakeAgent(chunks), [])]
+
+    payloads = [json.loads(line[6:]) for line in lines]
+    assert payloads[0]["name"] == "task"
+    assert payloads[1]["type"] == "tool_result"
+    assert payloads[-1] == {"type": "final", "content": "提取完成"}
+
+
 async def test_stream_chat_turn_error_yields_error_event():
     agent = _FakeAgent([], error=RuntimeError("LLM down"))
     lines = [line async for line in stream_chat_turn(agent, [])]

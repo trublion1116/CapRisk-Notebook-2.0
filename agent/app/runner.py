@@ -1,8 +1,11 @@
 import time
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from langchain_core.messages import HumanMessage
 
 from app.agents import build_orchestrator_agent
+from app.chat_stream import events_from_update
 from app.extraction import source_bytes_to_text, split_sections
 from app.jobs import ExtractionJob
 from app.on_client import OpenNotebookClient
@@ -11,6 +14,9 @@ from app.tracing import child_span, new_handler, traced
 # Below this, a stored full_text is considered usable and the PDF download +
 # pypdf fallback is skipped (guards against empty/placeholder values).
 MIN_STORED_TEXT_CHARS = 1000
+
+# Progress event callback: async, receives tool_call/tool_result event dicts
+OnEvent = Callable[[dict[str, Any]], Awaitable[None]]
 
 
 async def fetch_source_text(
@@ -33,8 +39,16 @@ async def fetch_source_text(
     return source_bytes_to_text(data), "pdf-fallback"
 
 
-async def run_extraction_job(job: ExtractionJob) -> None:
-    """Fetch a source from ON, run the extraction agent, write insights back."""
+async def run_extraction_job(
+    job: ExtractionJob, on_event: OnEvent | None = None
+) -> None:
+    """Fetch a source from ON, run the extraction agent, write insights back.
+
+    With `on_event`, the orchestrator runs via astream(updates) and every
+    tool lifecycle update (task dispatch to subagents, submit_insight
+    write-backs) is forwarded as a tool_call/tool_result event so callers
+    can stream the extraction details live (e.g. into a chat turn).
+    """
     client = OpenNotebookClient()
     try:
         with traced(
@@ -60,10 +74,20 @@ async def run_extraction_job(job: ExtractionJob) -> None:
             agent = build_orchestrator_agent(
                 client, sections, job.source_id, job.insight_type
             )
-            await agent.ainvoke(
-                {"messages": [HumanMessage(content="开始按流程提取核心观点。")]},
-                config={"callbacks": [new_handler()]},
-            )
+            callbacks = [new_handler()]
+            if on_event is None:
+                await agent.ainvoke(
+                    {"messages": [HumanMessage(content="开始按流程提取核心观点。")]},
+                    config={"callbacks": callbacks},
+                )
+            else:
+                async for mode, chunk in agent.astream(
+                    {"messages": [HumanMessage(content="开始按流程提取核心观点。")]},
+                    config={"callbacks": callbacks},
+                    stream_mode=["updates"],
+                ):
+                    for event in events_from_update(chunk):
+                        await on_event(event)
 
             span.update(output={"sections": len(sections), "origin": origin})
 

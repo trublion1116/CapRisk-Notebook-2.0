@@ -48,19 +48,35 @@ async def test_list_sources_tool_formats_rows():
     assert "BIS 年度报告" in result
 
 
-async def test_start_extraction_tool_creates_background_job():
-    job = MagicMock(id="job123")
+async def test_start_extraction_tool_runs_synchronously_and_streams():
+    """The extraction tool awaits the pipeline in-call (synchronous for the
+    chat turn) and forwards pipeline events through the writer."""
+    job = MagicMock(id="job123", status="done", sections=42, error=None)
+    captured_events = []
+    calls = []
+
+    async def fake_run(job_arg, on_event=None):
+        calls.append(job_arg)
+        assert on_event is not None
+        await on_event({"type": "tool_call", "id": "t1", "name": "task", "args": {}})
+
     with (
-        patch("app.agents.create_job", return_value=job) as create_job_mock,
-        patch("app.runner.run_extraction_job", new_callable=AsyncMock) as run_job,
+        patch("app.agents.create_job", return_value=job),
+        patch("app.runner.run_extraction_job", fake_run),
+        patch(
+            "app.agents.get_stream_writer",
+            side_effect=lambda: lambda ev: captured_events.append(ev),
+        ),
     ):
         tools = _capture_tools()
         start = next(t for t in tools if t.name == "start_core_viewpoint_extraction")
         result = await start.ainvoke({"source_id": "source:a"})
 
-    create_job_mock.assert_called_once_with("source:a", "核心观点")
+    # Pipeline ran synchronously inside the tool call (awaited, not scheduled)
+    assert calls == [job]
+    # Pipeline events reached the chat graph's writer (-> custom stream)
+    assert captured_events == [
+        {"type": "tool_call", "id": "t1", "name": "task", "args": {}}
+    ]
     assert "job123" in result
-    # The tool schedules run_extraction_job as a background task: the
-    # coroutine is created (called once with the job) but not awaited
-    # inside the tool call itself.
-    run_job.assert_called_once_with(job)
+    assert "done" in result

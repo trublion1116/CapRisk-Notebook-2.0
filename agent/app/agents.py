@@ -2,6 +2,7 @@ import asyncio
 
 from deepagents import create_deep_agent
 from langchain_core.tools import tool
+from langgraph.config import get_stream_writer
 
 from app.jobs import create_job
 from app.llm import build_llm
@@ -21,10 +22,12 @@ CHAT_PREAMBLE = """\
 
 意图识别——提取核心观点：
 - 当用户要求"提取核心观点 / 提取观点 / 生成见解 / 分析这份报告的核心观点"等类似任务时，
-  这是一项异步提取任务，不要自己长篇摘抄，而是走工具流程：
-  1. 若用户未指明哪份报告或上下文中有多个来源，先调用 list_sources 让用户确认或自行匹配；
-  2. 调用 start_core_viewpoint_extraction 启动提取任务（后台异步执行，几分钟完成）；
-  3. 告知用户任务已启动、job_id 是什么、结果会自动写回该来源的"见解"列表，稍后在界面刷新查看。
+  不要自己长篇摘抄，而是调用工具完成：
+  1. 若用户未指明哪份报告或上下文中有多个来源，先调用 list_sources 确认目标；
+  2. 调用 start_core_viewpoint_extraction —— 该工具会**同步执行**完整提取流水线，
+     可能运行几分钟，期间系统会把执行细节（分批派发、逐条提交见解）实时展示给用户，
+     你只需等待其返回，不要重复调用；
+  3. 工具返回后，根据结果向用户汇报：处理了多少节、提交了多少条见解、任务状态。
 - 普通问答、总结、分析类请求不需要调用工具，直接回答。\
 """
 
@@ -74,7 +77,9 @@ def build_chat_agent():
     """Chat agent used by the /chat endpoint (ON proxies notebook chat here).
 
     Besides Q&A over the notebook context, it recognizes the "extract core
-    viewpoints" intent and starts the async extraction pipeline via tools.
+    viewpoints" intent and runs the extraction pipeline synchronously inside
+    the tool call, streaming execution details to the user via the LangGraph
+    stream writer.
     """
     # Deferred import: runner imports this module at top level
     from app.runner import run_extraction_job
@@ -103,17 +108,43 @@ def build_chat_agent():
         source_id: str,
         insight_type: str = "核心观点",
     ) -> str:
-        """对指定来源启动异步的核心观点提取任务（后台执行，几分钟完成）。
+        """对指定来源执行核心观点提取（同步，可能运行几分钟）。
+
+        执行细节（子代理分批阅读、逐条提交见解）会实时展示给用户，
+        完成后见解自动写回 OpenNotebook。
 
         Args:
             source_id: 来源的 id（从 list_sources 获得）。
             insight_type: 写回 OpenNotebook 时的见解类型标签，默认"核心观点"。
         """
+        try:
+            writer = get_stream_writer()
+        except RuntimeError:  # no stream context (e.g. direct invoke) - drop
+            writer = lambda event: None
+
         job = create_job(source_id, insight_type)
-        asyncio.create_task(run_extraction_job(job))
+
+        async def on_event(event: dict) -> None:
+            try:
+                writer(event)
+            except Exception:  # noqa: S110, BLE001 - writer dies with the stream
+                pass
+
+        # shield: if the chat stream disconnects (user closes the page) the
+        # HTTP task is cancelled, but the extraction keeps running to
+        # completion in the background (queryable via GET /jobs/{job_id}).
+        job_task = asyncio.create_task(run_extraction_job(job, on_event=on_event))
+        try:
+            await asyncio.shield(job_task)
+        except asyncio.CancelledError:
+            job.record("chat stream disconnected; extraction continues")
+            raise
+
         return (
-            f"提取任务已启动: job_id={job.id}。后台异步执行中，"
-            f"完成后见解会自动写回来源的见解列表。"
+            f"提取任务结束: status={job.status}, "
+            f"共 {job.sections} 节, job_id={job.id}"
+            + (f", error={job.error}" if job.error else "")
+            + "。执行过程已实时展示给用户，请基于以上结果向用户汇报。"
         )
 
     return create_deep_agent(

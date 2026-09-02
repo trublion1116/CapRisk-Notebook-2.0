@@ -104,19 +104,27 @@ async def stream_chat_turn(
     """Run the agent and yield SSE lines for tokens, tool calls and the final
     answer. The final event carries the complete text of the last AI message
     (source of truth for the client; individual tokens may be dropped by
-    proxies mid-stream)."""
+    proxies mid-stream).
+
+    custom mode events (written by tools via get_stream_writer, e.g. the
+    extraction pipeline's nested task/submit_insight updates) are passed
+    through as-is - the frontend renders them as tool-call cards.
+    """
     last_ai_text = ""
     try:
         async for mode, chunk in agent.astream(
             {"messages": lc_messages},
             config={"callbacks": callbacks or []},
-            stream_mode=["messages", "updates"],
+            stream_mode=["messages", "updates", "custom"],
         ):
             if mode == "messages":
                 msg_chunk = chunk[0] if isinstance(chunk, tuple) else chunk
                 event = token_event(msg_chunk)
                 if event:
                     yield sse(event)
+            elif mode == "custom":
+                if isinstance(chunk, dict):
+                    yield sse(chunk)
             elif mode == "updates":
                 for delta in (
                     chunk.values() if isinstance(chunk, dict) else []
