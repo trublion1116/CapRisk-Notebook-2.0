@@ -32,3 +32,12 @@ describe('MarkdownRenderer', () => {
     expect(container.querySelectorAll('span[class*="token"]').length).toBe(0)
   })
 })
+
+  it('renders markdown images as <img> with external src', () => {
+    const { container } = render(
+      <MarkdownRenderer>{'![Graph 1](http://localhost:5060/images/x/page_001.png)'}</MarkdownRenderer>
+    )
+    const img = container.querySelector('img')
+    expect(img).not.toBeNull()
+    expect(img?.getAttribute('src')).toBe('http://localhost:5060/images/x/page_001.png')
+  })

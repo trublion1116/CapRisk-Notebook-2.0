@@ -33,43 +33,97 @@ CHAT_PREAMBLE = """\
 
 ORCHESTRATOR_PROMPT_TEMPLATE = """\
 你是资金风险分析系统的编排分析师（orchestrator），负责对一份权威宏观报告\
-（如 BIS 年度经济报告）完成分析任务并将结果写回 OpenNotebook。
+（如 BIS 年度经济报告）完成核心观点提取，并将结果写回 OpenNotebook。
 
 重要——数据流向说明：
 - 报告共 {total_sections} 节，内容系统已准备好，由各子代理内部的阅读工具持有。
 - 你没有任何读取报告的工具，也不需要。不要用 ls / glob / read_file 等文件工具\
 寻找报告——虚拟文件系统里没有报告文件，那是死路。
-- 你的职责只有一个入口：调用 task 把具体工作派给子代理。
+- 你的职责：调用 task 派发 → 收齐候选 → 合成一篇结构化报告 → 一次性提交。
 
 分批派发策略（上下文安全，必须遵守）：
 - 每次 task 只派一个分节区间（约 {batch_size} 节，如"请负责第 0-14 节，\
 逐节读完并返回该区间候选"），区间按分节编号切分，覆盖全部 {total_sections} 节、\
 不重不漏。
 - 单次 task 让子代理读全部 {total_sections} 节是禁止的——会超出模型上下文。
-- 收齐所有区间的结果后，进入终审。
+- 收齐所有区间的结果后，进入报告合成。
+
+报告章节结构（数据面按报告真实结构切分，合成时按此组织）：
+{outline}
 
 可用子代理（通过 task 工具派发）：
 {subagent_catalog}
 
 工作流程（严格遵循）：
-1. **规划**：用 todo 列出步骤（划分区间 → 逐批派发 → 合并终审 → 逐条提交 → 汇总）。
-2. **逐批派发**：按区间调用 task，收集每批返回的候选清单。
-3. **终审**：合并全部候选后去重与终审——相同观点合并、删除仍显套话或增量不足的\
-条目、宁缺毋滥。
-4. **提交**：对通过的每条调用 submit_insight 写回（目标 5~15 条）。\
-quote 必须保持候选中的逐字原文引用，不得改写。
-5. **汇总**：最终回答报告——共几批、收到多少条候选、提交多少条、最重要的 3 条是什么。\
+1. **规划**：用 todo 列出步骤（划分区间 → 逐批派发 → 合成报告 → 提交 → 汇总）。
+2. **逐批派发**：按区间调用 task，收集每批返回的候选清单（候选自带章节与\
+相关图表标注）。
+3. **合成结构化报告**：调用 list_charts 查看图表资源，然后把全部候选组织成\
+**一篇** markdown 报告，结构模板：
+
+# 《{source_title}》核心观点报告
+
+## 总览
+（3~6 条跨章节的最重要观点；每条：> 原文引用 + 中文解读）
+
+## {{各章标题——按上面"报告章节结构"，如 "第一章 I. Progress and peril"}}
+（该章核心观点分小节组织；每条观点：> 原文引用 + 解读 + 新颖性/重要性要点）
+（章内专题框以 "### Box X: ..." 子节呈现，按完整论点链条提取）
+（与观点强相关的图表：紧跟观点后嵌入图片，markdown 格式\
+![图表说明](URL)，URL 从 list_charts 结果原样复制）
+（Endnotes/References 等章后内容不进报告）
+
+4. **图表嵌入规则**：全篇选 8~15 张最关键图表；只在相关观点处嵌图，不要堆砌；\
+alt 文字写图号与要点（如 "Graph 7.B 稳定币流入对比"）。
+5. **提交**：调用 submit_report 一次性提交整篇报告（有且仅有一次调用，\
+content 为完整 markdown）。
+6. **汇总**：最终回答报告——覆盖章节数、观点总数、嵌入图表数、最重要的 3 条\
+观点。
 """
 
 
+def build_outline(sections: list) -> str:
+    """sections → 章节大纲（注入编排 prompt，替代工具查询：零调用成本）。
+
+    每章一行：章标题 + 节范围 + Box 清单。backmatter（Endnotes 等）只提示
+    存在，报告不组织它们。
+    """
+    chapters: dict[str, list[dict]] = {}
+    order: list[str] = []
+    for s in sections:
+        ch = str(s.get("chapter_title") or "（未分章）")
+        if ch not in chapters:
+            chapters[ch] = []
+            order.append(ch)
+        chapters[ch].append(s)
+    lines = []
+    for ch in order:
+        secs = chapters[ch]
+        idxs = [int(s["index"]) for s in secs]
+        boxes = [s for s in secs if s.get("kind") == "box"]
+        backm = [s for s in secs if s.get("kind") == "backmatter"]
+        box_hint = (
+            "；专题框：" + "、".join(str(b["title"]) for b in boxes) if boxes else ""
+        )
+        back_hint = f"（含 {len(backm)} 节章后内容，不进报告）" if backm else ""
+        lines.append(f"- {ch}：第 {min(idxs)}-{max(idxs)} 节{box_hint}{back_hint}")
+    return "\n".join(lines)
+
+
 def build_orchestrator_prompt(
-    total_sections: int, batch_size: int, catalog: list[str]
+    total_sections: int,
+    batch_size: int,
+    catalog: list[str],
+    outline: str = "",
+    source_title: str = "报告",
 ) -> str:
     """组装编排 prompt：子代理目录由注册表自动拼接（开闭原则）。"""
     return ORCHESTRATOR_PROMPT_TEMPLATE.format(
         total_sections=total_sections,
         batch_size=batch_size,
         subagent_catalog="\n".join(catalog),
+        outline=outline or f"- 共 {total_sections} 节（结构未识别，按节序组织）",
+        source_title=source_title or "报告",
     )
 
 
@@ -154,15 +208,51 @@ def build_chat_agent():
     )
 
 
+def build_list_charts_tool(sections: list, source_id: str):
+    """构造 list_charts 工具（模块级以便单测：deepagents 产物不暴露 tools）。"""
+    from app import config
+
+    @tool
+    def list_charts() -> str:
+        """列出全部图表页 PNG 及其 markdown 嵌入引用（合成报告时用）。
+
+        每行：页码 | 所属章节 | 图表要点 | 可直接复制的 markdown 图片引用。
+        """
+        lines = []
+        for s in sections:
+            notes = s.get("image_notes") or []
+            for i, img in enumerate(s.get("images") or []):
+                name = str(img).rsplit("/", 1)[-1]
+                # AGENT_PUBLIC_URL 为空时用相对路径，前端 Next rewrite
+                # 把 /agent-images/* 同源代理到本服务（绕开浏览器直连 5060，
+                # Windows→WSL 的 localhost 转发不可靠，实测 2026-09-12）
+                if config.AGENT_PUBLIC_URL:
+                    url = f"{config.AGENT_PUBLIC_URL}/images/{source_id}/{name}"
+                else:
+                    url = f"/agent-images/{source_id}/{name}"
+                # alt 里不能有换行/中括号，会破坏 markdown 引用
+                hint = (notes[i] if i < len(notes) else "").replace("\n", " ")[:70]
+                hint = hint.replace("[", "(").replace("]", ")")
+                lines.append(
+                    f"- p{s.get('page_start', '?')} | {s.get('chapter_title', '')} | "
+                    f"{hint} | ![{hint}]({url})"
+                )
+        return "\n".join(lines) if lines else "（本报告无图表页）"
+
+    return list_charts
+
+
 def build_orchestrator_agent(
     client: OpenNotebookClient,
     sections: list,
     source_id: str,
     insight_type: str,
+    source_title: str = "",
 ):
-    """Lean orchestration agent: dispatch subagents, review, submit insights.
+    """Lean orchestration agent: dispatch subagents, synthesize one structured
+    report, submit it in a single call.
 
-    Holds only the submission tool - all reading/analysis capabilities live
+    Holds only the report tools - all reading/analysis capabilities live
     in registered subagents (see app/subagents/).
     """
     total = len(sections)
@@ -176,40 +266,25 @@ def build_orchestrator_agent(
         source_id=source_id,
         insight_type=insight_type,
     )
-    prompt = build_orchestrator_prompt(total, batch, subagent_catalog())
-    counter = {"submitted": 0}
+    prompt = build_orchestrator_prompt(
+        total, batch, subagent_catalog(), build_outline(sections), source_title
+    )
+    list_charts = build_list_charts_tool(sections, source_id)
 
     @tool
-    async def submit_insight(
-        quote: str,
-        analysis: str,
-        novelty: str,
-        significance: str,
-    ) -> str:
-        """提交一条核心观点到 OpenNotebook（编排层统一提交，subagent 不提交）。
+    async def submit_report(content: str) -> str:
+        """提交整篇结构化核心观点报告（完整 markdown，一次提交写回 OpenNotebook）。
 
         Args:
-            quote: 报告原文的逐字引用（英文原文保留英文）。
-            analysis: 中文解读：这句话实际在说什么。
-            novelty: 相对市场共识/惯常表述的新颖之处（增量在哪里）。
-            significance: 为什么这句话重要（对资金/风险判断的含义）。
+            content: 完整报告 markdown：# 标题 → ## 总览 → 各章（含 Box 子节、
+                图表嵌入）。这是唯一一次提交调用，确保整篇完整后再提交。
         """
-        content = (
-            f"> {quote}\n\n"
-            f"{analysis}\n\n"
-            f"**新颖性**: {novelty}\n\n"
-            f"**重要性**: {significance}"
-        )
         result = await client.create_insight(source_id, insight_type, content)
-        counter["submitted"] += 1
-        return (
-            f"OK: insight #{counter['submitted']} created "
-            f"(command_id={result.get('command_id')})"
-        )
+        return f"OK: report created ({len(content)} chars, command_id={result.get('command_id')})"
 
     return create_deep_agent(
-        model=build_llm(max_tokens=8192, temperature=0.2),
-        tools=[submit_insight],
+        model=build_llm(max_tokens=16384, temperature=0.2),
+        tools=[list_charts, submit_report],
         subagents=registered_subagents(context),
         system_prompt=prompt,
     )

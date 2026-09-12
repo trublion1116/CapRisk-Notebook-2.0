@@ -30,13 +30,22 @@ const nextConfig: NextConfig = {
     // Default: http://localhost:5055 (single-container deployment)
     // Override for multi-container: INTERNAL_API_URL=http://api-service:5055
     const internalApiUrl = process.env.INTERNAL_API_URL || 'http://localhost:5055'
+    // Fork: agent 服务的图表 PNG 静态服务。见解报告里的图片用相对路径
+    // /agent-images/... 引用，经此代理同源加载——浏览器不直连 5060
+    // （Windows→WSL 的 localhost 转发对 5060 不可靠，实测 2026-09-12）。
+    const agentServiceUrl = process.env.AGENT_SERVICE_URL || 'http://localhost:5060'
 
     console.log(`[Next.js Rewrites] Proxying /api/* to ${internalApiUrl}/api/*`)
+    console.log(`[Next.js Rewrites] Proxying /agent-images/* to ${agentServiceUrl}/images/*`)
 
     return [
       {
         source: '/api/:path*',
         destination: `${internalApiUrl}/api/:path*`,
+      },
+      {
+        source: '/agent-images/:path*',
+        destination: `${agentServiceUrl}/images/:path*`,
       },
     ]
   },

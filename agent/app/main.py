@@ -3,6 +3,7 @@ import os
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
@@ -10,7 +11,7 @@ from app import config
 from app.agents import build_chat_agent
 from app.chat_stream import stream_chat_turn
 from app.jobs import create_job, get_job
-from app.runner import run_extraction_job
+from app.runner import IMAGE_ROOT, run_extraction_job
 from app.tracing import new_handler, traced
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,11 @@ app = FastAPI(
         "treasury risk analysis system."
     ),
 )
+
+# 图表页 PNG 静态服务：结构化报告以 ![..](/images/..) 引用，
+# ON 前端渲染 insight 时直接向本服务取图（runner 的 IMAGE_ROOT 落盘处）
+IMAGE_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/images", StaticFiles(directory=str(IMAGE_ROOT)), name="images")
 
 _chat_agent = None
 

@@ -48,8 +48,8 @@ class _FakeOrchestrator:
                         tool_calls=[
                             {
                                 "id": "c2",
-                                "name": "submit_insight",
-                                "args": {"quote": "circular financing"},
+                                "name": "submit_report",
+                                "args": {"content": "# 报告"},
                             }
                         ],
                     ),
@@ -63,12 +63,18 @@ async def test_on_event_mode_streams_lifecycle(monkeypatch):
     fake = _FakeOrchestrator()
 
     async def fake_fetch(client, job):
-        return "text " * 300, "on-parsed"
+        return None, "text " * 300, "on-parsed"
 
     with (
         patch("app.runner.OpenNotebookClient", MagicMock()),
-        patch("app.runner.fetch_source_text", fake_fetch),
-        patch("app.runner.split_sections", lambda text: ["s1"] * 10),
+        patch("app.runner.fetch_source_material", fake_fetch),
+        patch(
+            "app.runner.ingest",
+            lambda *a, **k: (
+                [{"index": i, "text": "s1", "images": []} for i in range(10)],
+                MagicMock(),
+            ),
+        ),
         patch("app.runner.build_orchestrator_agent", return_value=fake),
         patch("app.runner.traced", MagicMock()),
         patch("app.runner.child_span", MagicMock()),
@@ -85,11 +91,11 @@ async def test_on_event_mode_streams_lifecycle(monkeypatch):
     names = [(e["type"], e["name"]) for e in events]
     assert ("tool_call", "task") in names
     assert ("tool_result", "task") in names
-    assert ("tool_call", "submit_insight") in names
-    quotes = [
-        e["args"].get("quote") for e in events if e["name"] == "submit_insight"
+    assert ("tool_call", "submit_report") in names
+    contents = [
+        e["args"].get("content") for e in events if e["name"] == "submit_report"
     ]
-    assert "circular financing" in quotes
+    assert any("报告" in c for c in contents if c)
 
 
 async def test_without_on_event_uses_ainvoke(monkeypatch):
@@ -97,12 +103,18 @@ async def test_without_on_event_uses_ainvoke(monkeypatch):
     fake = _FakeOrchestrator()
 
     async def fake_fetch(client, job):
-        return "text " * 300, "on-parsed"
+        return None, "text " * 300, "on-parsed"
 
     with (
         patch("app.runner.OpenNotebookClient", MagicMock()),
-        patch("app.runner.fetch_source_text", fake_fetch),
-        patch("app.runner.split_sections", lambda text: ["s1"] * 10),
+        patch("app.runner.fetch_source_material", fake_fetch),
+        patch(
+            "app.runner.ingest",
+            lambda *a, **k: (
+                [{"index": i, "text": "s1", "images": []} for i in range(10)],
+                MagicMock(),
+            ),
+        ),
         patch("app.runner.build_orchestrator_agent", return_value=fake),
         patch("app.runner.traced", MagicMock()),
         patch("app.runner.child_span", MagicMock()),
