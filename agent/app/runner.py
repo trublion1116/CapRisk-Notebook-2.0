@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -82,6 +83,8 @@ async def describe_section_images(
 
     失败降级：单图描述失败记 "（描述不可用）"，不阻塞主流程。
     去重：同一 PNG 只描述一次（跨节挂载的图表页共享描述）。
+    缓存：per source 落盘 notes.json（图片文件不变则描述不变），重复
+    提取/格式迭代时跳过全部 VLM 调用——实测一批 45 张省 ~7.5 分钟。
     """
     imgs = sorted({str(img) for s in sections for img in s.get("images", [])})
     if not imgs:
@@ -94,10 +97,27 @@ async def describe_section_images(
             )
         return 0
 
-    semaphore = asyncio.Semaphore(VISION_CONCURRENCY)
     cache: dict[str, str] = {}
+    cache_file = IMAGE_ROOT / job.source_id / "notes.json"
+    if cache_file.exists():
+        try:
+            cache = {
+                k: v
+                for k, v in json.loads(cache_file.read_text()).items()
+                if Path(k).exists()
+            }
+        except Exception:  # noqa: BLE001 - 缓存损坏当无缓存
+            logger.warning("notes cache unreadable: %s", cache_file)
+            cache = {}
+    hits = sum(1 for img in imgs if img in cache)
+    if hits:
+        job.record(f"image notes cache hit {hits}/{len(imgs)}")
+
+    semaphore = asyncio.Semaphore(VISION_CONCURRENCY)
 
     async def one(i: int, img: str) -> None:
+        if img in cache:
+            return
         if on_event:
             await on_event(
                 {
@@ -110,7 +130,7 @@ async def describe_section_images(
         async with semaphore:
             try:
                 cache[img] = await describe_chart(img)
-            except Exception as e:
+            except Exception as e:  # 单图失败降级
                 logger.warning("chart describe failed: %s", img, exc_info=True)
                 cache[img] = f"（图表描述不可用: {e!r}）"
         if on_event:
@@ -126,6 +146,14 @@ async def describe_section_images(
             )
 
     await asyncio.gather(*(one(i, img) for i, img in enumerate(imgs)))
+    try:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(
+            json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8"
+        )
+    except Exception:  # noqa: BLE001 - 缓存写失败不影响主流程
+        logger.warning("notes cache write failed: %s", cache_file)
+
     for s in sections:
         s["image_notes"] = [
             cache.get(str(img), "（描述不可用）") for img in s.get("images", [])
