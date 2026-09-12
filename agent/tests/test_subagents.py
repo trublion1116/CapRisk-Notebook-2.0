@@ -154,6 +154,15 @@ def test_list_charts_absolute_url_when_configured(monkeypatch):
     assert "http://192.168.1.5:5060/images/s/y.png" in tool.invoke({})
 
 
+def test_submit_report_strips_invisible_ws_in_urls(fake_llm_config):
+    """LLM 会在 ]( 与 URL 间插入不可见空白（U+2009 等）导致图裂，落库前清洗。"""
+    from app.agents import _URL_WS_RE
+
+    dirty = "![alt](\u2009/agent-images/s/p.png)\n[x](\u200bhttp://a/b)"
+    clean = _URL_WS_RE.sub(r"](", dirty)
+    assert clean == "![alt](/agent-images/s/p.png)\n[x](http://a/b)"
+
+
 def test_duplicate_name_rejected():
     with pytest.raises(ValueError, match="Duplicate subagent name"):
 

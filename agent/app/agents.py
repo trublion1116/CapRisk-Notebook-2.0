@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 from deepagents import create_deep_agent
 from langchain_core.tools import tool
@@ -12,6 +13,9 @@ from app.subagents import (
     registered_subagents,
     subagent_catalog,
 )
+
+# markdown 链接/图片 URL 的前导不可见空白（含 thin space U+2009 等）
+_URL_WS_RE = re.compile(r"\]\([\s\u200b\u2009\u200a\u202f\u00a0\ufeff]+")
 
 CHAT_PREAMBLE = """\
 你是"资金风险AI分析系统"的分析助手，服务于宏观经济报告（如 BIS 年度报告）的研究人员。
@@ -286,9 +290,14 @@ def build_orchestrator_agent(
         """提交整篇结构化核心观点报告（完整 markdown，一次提交写回 OpenNotebook）。
 
         Args:
-            content: 完整报告 markdown：# 标题 → ## 总览 → 各章（含 Box 子节、
-                图表嵌入）。这是唯一一次提交调用，确保整篇完整后再提交。
+            content: 完整报告 markdown：# 标题 → ## 总览（索引表格）→ 各章
+                （[PN] 编号观点、Box 子节、图表嵌入）→ ## References。这是
+                唯一一次提交调用，确保整篇完整后再提交。
         """
+        # LLM 生成 markdown 时会在 ]( 与 URL 之间插入不可见空白（实测
+        # U+2009 thin space，2026-09-12），导致浏览器请求路径错误图裂。
+        # 落库前代码层清洗，不依赖模型格式纪律。
+        content = _URL_WS_RE.sub(r"](", content)
         result = await client.create_insight(source_id, insight_type, content)
         return f"OK: report created ({len(content)} chars, command_id={result.get('command_id')})"
 
