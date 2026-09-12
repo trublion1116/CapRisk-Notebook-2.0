@@ -70,7 +70,7 @@
 解读：用"有效税率 vs 宣布税率"的落差量化关税虚张声势，是对全球增长与通胀预期的重要校准。
 新颖性：高。重要性：高。
 
-![Graph 2.A 有效关税率实际稳定在 10%，远低于宣布的 25%+ 峰值](/agent-images/source:6rxddpszvsnganzpbxv8/page_019.png)
+![Graph 2.A 有效关税率实际稳定在 10%，远低于宣布的 25%+ 峰值](images/page_019.png)
 
 **观点 2：关税成本分摊为"企业吸收三分之二、消费者承担三分之一"。**
 > "Estimates for US firms suggest those most affected by the tariffs absorbed about two thirds of the cost increases through lower profits, while only passing on one third to consumers (Graph 2.C)."
@@ -89,7 +89,7 @@
 解读：否定了"通胀是一次性价格水平上移、可被忽略"的假设——冲击越大弹性越高，且压力会在油价正常化后继续释放。
 新颖性：高。重要性：高——若成立，降息路径与久期定价需大幅重估。
 
-![Graph 8.A 冲突爆发后全球通胀跳升，化肥与塑料等上游投入品涨幅达两位数](/agent-images/source:6rxddpszvsnganzpbxv8/page_028.png)
+![Graph 8.A 冲突爆发后全球通胀跳升，化肥与塑料等上游投入品涨幅达两位数](images/page_028.png)
 
 **观点 5：实物原油价格反应远超期货基准，部分区域油价回到 2008 年中水平。**
 > "Brent prices surged by 67% to an intraday peak of $120 in less than two weeks … Physical crude prices have reacted even more to tighter supply conditions, with some regional crude oil prices matching mid-2008 peaks."
@@ -151,7 +151,7 @@
 解读：史上最大释储仅覆盖 20 天缺口；九国逾 40 处能源资产受损，卡塔尔 LNG 产能削减 17%、恢复需长达五年。
 新颖性：高。重要性：高。
 
-![Graph B1.A 霍尔木兹冲击造成的重大物流与生产中断及其外溢](/agent-images/source:6rxddpszvsnganzpbxv8/page_024.png)
+![Graph B1.A 霍尔木兹冲击造成的重大物流与生产中断及其外溢](images/page_024.png)
 
 **观点 16：市场定价与实体风险显著脱节。**
 > "Market-implied volatility and tail risk indicators have moved back close to pre-conflict levels. This benign view contrasts with lingering uncertainty regarding the persistent ramifications of damage already done, particularly for inflation."
@@ -175,7 +175,7 @@
 解读：生产率主导→r-star 与通胀上行；需求瓶颈主导→r-star 先升后跌破 AI 前基线、通胀转通缩。
 新颖性：高。重要性：高——直接否定"AI 必然推高利率"的单一押注，并给出三个可观测判别参数。
 
-![Graph C1 AI 的长期影响与自然利率：情景决定方向](/agent-images/source:6rxddpszvsnganzpbxv8/page_030.png)
+![Graph C1 AI 的长期影响与自然利率：情景决定方向](images/page_030.png)
 
 ### 1.4 金融脆弱性作为放大器
 
@@ -184,7 +184,7 @@
 解读：判据不是估值倍数，而是"价格隐含长期 EPS 增速 > 企业自身历史实现增速"；大盘股风险补偿分布整体左移。
 新颖性：中高。重要性：高——估值对增长容错度极低。
 
-![Graph 12.A 股价隐含的长期盈利增长远超企业历史实现水平](/agent-images/source:6rxddpszvsnganzpbxv8/page_034.png)
+![Graph 12.A 股价隐含的长期盈利增长远超企业历史实现水平](images/page_034.png)
 
 **观点 21：美股集中度与家庭股市敞口使回调成为全球宏观事件。**
 > "with US stocks accounting for an outsized share of global equity markets – about 64% of the MSCI Global index – the wealth impact from a US-led repricing could propagate globally." … "Household equity exposures have grown over the past few decades, both relative to total wealth (Graph 12.C) and income."
@@ -264,7 +264,7 @@
 解读：老龄化（养老金/医疗）叠加大规模公共投资（基建、国防、可再生能源）需求，财政压力是结构性的。
 新颖性：中。重要性：中——久期溢价与长端利率的结构性上行因素。
 
-![Graph 1.A 政府债务预计继续上升（先进经济体与新兴市场经济体）](/agent-images/source:6rxddpszvsnganzpbxv8/page_053.png)
+![Graph 1.A 政府债务预计继续上升（先进经济体与新兴市场经济体）](images/page_053.png)
 
 ### Box A: Insufficient debt consolidation in good times
 
@@ -289,7 +289,7 @@
 解读：金融中介的资产负债表能力、融资条件与风险约束独立地决定财政空间；紧缩条件下成本曲线上移并变陡、债务上限内移。
 新颖性：高。重要性：高——风险判断需盯中介健康度而非只看财政消息。
 
-![Graph B1 金融条件决定财政空间：紧缩条件下主权融资成本曲线上移并变陡](/agent-images/source:6rxddpszvsnganzpbxv8/page_059.png)
+![Graph B1 金融条件决定财政空间：紧缩条件下主权融资成本曲线上移并变陡](images/page_059.png)
 
 **观点 8：放大机制不再依赖"投资者协调失败"。**
 > "In such markets, balance sheet dynamics and risk constraints can amplify shocks to yields even in the absence of a coordination failure."
@@ -320,14 +320,14 @@
 解读：NBFI 已成为最大持有者，市场对流动性/保证金冲击的敏感度系统性抬升。
 新颖性：高。重要性：高。
 
-![Graph 4.A 先进经济体主权债持有者结构：NBFI 份额由 44% 升至 53%](/agent-images/source:6rxddpszvsnganzpbxv8/page_060.png)
+![Graph 4.A 先进经济体主权债持有者结构：NBFI 份额由 44% 升至 53%](images/page_060.png)
 
 **观点 13：对冲基金的双边回购大量以"零折扣"成交，几乎无缓冲。**
 > "Around 70% of bilateral USD repos and more than 50% of bilateral EUR repos with hedge funds are transacted at zero haircuts (Graph 5.B). … These funding structures enable high leverage but leave positions acutely sensitive to shifts in margins, haircuts and derivatives pricing."
 解读：零折扣等于允许无约束加杠杆，是回购市场挤兑与强制去杠杆的直接触发点。
 新颖性：高。重要性：高。
 
-![Graph 5.B 对冲基金双边回购中的零折扣占比（USD 约 70%、EUR 超过 50%）](/agent-images/source:6rxddpszvsnganzpbxv8/page_061.png)
+![Graph 5.B 对冲基金双边回购中的零折扣占比（USD 约 70%、EUR 超过 50%）](images/page_061.png)
 
 **观点 14：银行-主权纽带"由直接转为间接"。**
 > "there is evidence that the direct bank-sovereign nexus may have become less pronounced than a decade ago. … At the same time, banks' interconnections with NBFIs seem to have created indirect transmission channels from sovereign risk to banks."
@@ -378,7 +378,7 @@
 解读：意味着高债务环境下需要更大幅度加息才能达到同样的通胀效果；加息→财政恶化→风险溢价上升形成隐性放大链。
 新颖性：高。重要性：高。
 
-![Graph 10 高债务钝化货币政策传导：价格与产出反应减弱](/agent-images/source:6rxddpszvsnganzpbxv8/page_069.png)
+![Graph 10 高债务钝化货币政策传导：价格与产出反应减弱](images/page_069.png)
 
 **观点 23：债务久期决定传导效力，且关系呈非线性。**
 > "When maturities are long, the valuation channel is stronger … As maturities shorten, more debt rolls over quickly at higher rates, strengthening the income channel and weakening the disinflationary impact of monetary tightening. At very short maturities, however, rollover risk could re-emerge as an amplifying force."
@@ -501,7 +501,7 @@
 解读：稳定币储备已成为美国短端国债市场不可忽视的边际买家，实质借用美元的记账单位功能。
 新颖性：高。重要性：高——对短端利率、货币市场流动性与美国融资成本有实质影响。
 
-![Graph 2.A 稳定币市值约 3200 亿美元，高度集中于 USDT/USDC 且近期趋于停滞](/agent-images/source:6rxddpszvsnganzpbxv8/page_098.png)
+![Graph 2.A 稳定币市值约 3200 亿美元，高度集中于 USDT/USDC 且近期趋于停滞](images/page_098.png)
 
 **观点 14：交易量被严重夸大，且"监管即能催生非美元稳定币"被证伪。**
 > "Annual stablecoin transaction volume amounted to an estimated $28 trillion in 2025, equivalent to less than three business weeks of settlement volumes of the largest US wholesale payment systems; values net of transactions between wallets owned by the same party are far lower. … robust domestic regulatory frameworks have not, by themselves, catalysed large non-US dollar regulation-compliant stablecoin markets."
@@ -559,7 +559,7 @@
 > "All three scenarios feature an initial weakening of the banking sector's funding position, potentially triggering adjustments by banks that could affect credit provision. Clearly, the effects will depend strongly on the distribution of the impact across banks and available alternatives to bank credit."
 新颖性：中。重要性：中。
 
-![Graph 4 稳定币储备资产选择的第一轮资产负债表效应（三情景映射）](/agent-images/source:6rxddpszvsnganzpbxv8/page_108.png)
+![Graph 4 稳定币储备资产选择的第一轮资产负债表效应（三情景映射）](images/page_108.png)
 
 **观点 25（被低估的传导渠道）：流动性指标恶化 + 中小企业信贷的分配效应。**
 > "Banks' asset levels are initially unchanged at the sector level, but liquidity metrics deteriorate on average. This is because regulatory run-off rates for wholesale deposits are higher than for retail deposits (reducing the Liquidity Coverage Ratio (LCR)) and wholesale deposits are considered a less stable source of medium-term funding (reducing the Net Stable Funding Ratio (NSFR)). … Credit to small and medium-sized enterprises (SMEs), if primarily supplied by smaller banks, could thus be adversely affected."
@@ -578,7 +578,7 @@
 解读：银行贷款渠道（融资成本上升→信贷收缩→投资产出下降）与财政空间渠道（压低 T-bill 收益率→政府融资成本下降→减税/扩支→产出上升）相互对冲，净效应方向不定。
 新颖性：高。重要性：高——为所有稳定币宏观讨论提供可检验框架。
 
-![Graph D1 稳定币影响的两个渠道：银行贷款 vs 财政空间](/agent-images/source:6rxddpszvsnganzpbxv8/page_108.png)
+![Graph D1 稳定币影响的两个渠道：银行贷款 vs 财政空间](images/page_108.png)
 
 **观点 28（关键非对称）：高债务/高外需可翻转符号；央行储备是否付息决定正负。**
 > "The aggregate output response is modestly negative under the assumption that stablecoins hold government bills as reserve assets but high public debt and high foreign demand can change the direction of this effect… In a central bank reserve scenario, the model suggests that the net output effect of widespread stablecoin adoption could turn positive. … the central bank receives the seigniorage revenue … The effect weakens for remunerated reserves."
@@ -597,7 +597,7 @@
 解读：中位数美元化比率 1995–2019 大致稳定在约 20–30%，但货币危机后（t+2 至 t+6）升至约 40–50% 且持续；高通胀+汇率弹性低体制下约 30%，低通胀+浮动约 15%。稳定币是打破这一稳定态的边际力量。
 新颖性：高。重要性：高。
 
-![Graph E1.A 存款美元化长期稳定，但货币危机后显著且持续抬升](/agent-images/source:6rxddpszvsnganzpbxv8/page_111.png)
+![Graph E1.A 存款美元化长期稳定，但货币危机后显著且持续抬升](images/page_111.png)
 
 **观点 31（关键证伪）：传统资本管制对稳定币流入几乎无效。**
 > "While deposit dollarisation has been lower in economies with approval requirements on domestic foreign currency deposits, inflows into stablecoins have been broadly similar in economies with or without restrictions on stablecoin use between residents and non-residents (Graph 7.B)."
@@ -621,7 +621,7 @@
 解读：1% 净流入冲击下本币短期贬值、稳定币-法币平价偏差扩大且回落更慢。
 新颖性：高。重要性：高——一条新的金融稳定传导路径。
 
-![Graph 8.A 非美元法币持续流入美元锚定稳定币（2021–2025 显著攀升）](/agent-images/source:6rxddpszvsnganzpbxv8/page_114.png)
+![Graph 8.A 非美元法币持续流入美元锚定稳定币（2021–2025 显著攀升）](images/page_114.png)
 
 **观点 35：现行稳定币不满足支撑货币信任的属性。**
 > "Most critically, they threaten financial integrity and provide channels for regulatory evasion, while also raising dollarisation risks in EMDEs. … More generally, stablecoins in their current form do not uphold the properties that support trust in money, which might dent the foundations of monetary stability if, despite their drawbacks, stablecoins were adopted widely."
@@ -641,7 +641,7 @@
 > "For wholesale transactions, upgrades to real-time gross settlement (RTGS) systems can deliver tangible benefits, including basic forms of programmability, without necessarily moving towards a fully tokenised financial system." … "Broader non-bank access to central bank settlement accounts, or liquidity facilities and backstops, can bring benefits in some cases, but it also raises questions on risk management, supervision and necessary guardrails."
 解读：为"非代币化的渐进改良"正名，降低对全代币化架构的强制依赖；统一账本以央行货币为锚，承载代币化存款、稳定币与代币化资产。
 
-![Graph 9 统一账本架构：以央行货币为锚，整合代币化存款、稳定币与代币化资产](/agent-images/source:6rxddpszvsnganzpbxv8/page_117.png)
+![Graph 9 统一账本架构：以央行货币为锚，整合代币化存款、稳定币与代币化资产](images/page_117.png)
 
 **观点 39（结论·准入底线）：**
 > "For any role touching systemic payment systems or wholesale settlement, preserving the singleness of money requires timely redeemability into central bank money at par value and elastic provision of liquidity."

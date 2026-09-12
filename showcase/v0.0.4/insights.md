@@ -69,7 +69,7 @@
 解读：豁免、协议与贸易转移合计削掉约三分之一的全球产出损失，为"韧性超预期"提供了可量化的机制解释——关税的实际宏观成本被系统性高估。
 新颖性：中 / 重要性：高
 
-![有效关税率的落地水平远低于宣布峰值（Graph 2.A–2.C）](/agent-images/source:6rxddpszvsnganzpbxv8/page_019_1.png)
+![有效关税率的落地水平远低于宣布峰值（Graph 2.A–2.C）](images/page_019_1.png)
 
 **[P18] AI 相关投资对美国 2025 年实际 GDP 贡献约 1 个百分点，中国对东盟 FDI 增至三倍**
 > "In the United States... AI-related investments contributed roughly one percentage point to the country's real GDP growth in 2025... China's foreign direct investment in ASEAN nations has more than tripled, rising from $10 billion in 2017 to over $34 billion in 2024."（p.19，Graph A1.A、A1.B）
@@ -89,7 +89,7 @@
 解读：冲击量级空前，而政策缓冲极其有限；绕行方案（沙特东西管道至延布最多 500 万桶/日）本身暴露于攻击，替代性极弱。
 新颖性：高 / 重要性：高
 
-![霍尔木兹海峡流量崩塌与替代管道运力上限（Graph 4.A–4.B）](/agent-images/source:6rxddpszvsnganzpbxv8/page_022_1.png)
+![霍尔木兹海峡流量崩塌与替代管道运力上限（Graph 4.A–4.B）](images/page_022_1.png)
 
 **[P20] 能源基础设施已实损：卡塔尔 LNG 产能 -17%，完全恢复或需五年**
 > "By late March, more than 40 energy assets across nine Middle Eastern countries had been severely damaged. In Qatar, damage to LNG facilities cut capacity by 17%, with full recovery expected to take up to five years."（p.23）
@@ -103,7 +103,7 @@
 解读：报告明确指出日本 95% 原油来自海湾、其中 70% 经霍尔木兹，并给出"错失播种窗口不可逆"的机制——超出常规宏观视角的分配与尾部风险提示。
 新颖性：中 / 重要性：高
 
-![亚洲对霍尔木兹能源与化肥的直接暴露（Graph 5.A–5.B）](/agent-images/source:6rxddpszvsnganzpbxv8/page_023_1.png)
+![亚洲对霍尔木兹能源与化肥的直接暴露（Graph 5.A–5.B）](images/page_023_1.png)
 
 **[P22] Box B：供给冲击将持久化——1200 万桶/日级关停、设备排队延至 2027**
 > "Shut-ins have curtailed about 12 million barrels per day from a total regional crude oil supply of 21 million barrels per day... the rebuilding of those reserves could keep the physical markets tight for several months, possibly well into 2027... producers of gas turbines for liquefied natural gas compressors had order backlogs of three to five years."（p.25，Graph B1.A–B1.C）
@@ -135,7 +135,7 @@
 解读：通胀预期高于目标时约 90bp（低于目标仅约 25bp）；劳动力市场偏紧约 65bp vs 偏松约 50bp；财政偏松约 60bp vs 偏紧约 40bp——把"能否看穿冲击"直接挂钩到可观测的初始条件。
 新颖性：高 / 重要性：高
 
-![不同初始条件下油价冲击对通胀的差异弹性（Graph 9.A–9.C）](/agent-images/source:6rxddpszvsnganzpbxv8/page_029_1.png)
+![不同初始条件下油价冲击对通胀的差异弹性（Graph 9.A–9.C）](images/page_029_1.png)
 
 **[P27] 疫情以来不利供给冲击的频率已超过需求冲击，且这一状态将延续**
 > "Adverse supply shocks have become more frequent and more intense (Graph 17.A) – a condition that is set to stay."；尾注 3："Since the pandemic, the frequency of adverse supply shocks has surpassed that of negative demand shocks, breaking the pre-pandemic pattern..."（p.38，Graph 17.A）
@@ -155,7 +155,7 @@
 解读：债务动态的"免费午餐"已在多国消失，稳定债务率从此必须靠初级盈余——把债务可持续性变成当下的算术约束。
 新颖性：高 / 重要性：高
 
-![政府融资成本上升与 r−g 转正（Graph 16.A–16.C）](/agent-images/source:6rxddpszvsnganzpbxv8/page_038_1.png)
+![政府融资成本上升与 r−g 转正（Graph 16.A–16.C）](images/page_038_1.png)
 
 **[P29] 扩张期不整顿：发达经济体周期调整初级赤字 1.9%，近乎前二十年两倍**
 > "Cyclically adjusted primary deficits in AEs averaged 1.9% of GDP from 2022 onwards (Graph 15.B), nearly double the 1.1% recorded over the two preceding decades. EMEs have seen an even sharper deterioration (1.8% since 2022 versus 0.1% between 2000 and 2019)."（p.37，Graph 15.A–15.C）
@@ -169,7 +169,7 @@
 解读：在常规"AI 提高生产率"叙事之外，BIS 正式模型化了一个反向情景：自动化把收入从消费者转向资本，最终因需求不足使自动化停滞、增长低于趋势、r-star 长期低于 AI 前水平。且明确指出当前经济仍处"互补性（complementarity）regime"，变革性 AI 只是可能性而非现实。变革性情景下劳动份额由约 60% 降至约 15%。
 新颖性：高 / 重要性：高
 
-![Box C 三种 AI 情景下的 r-star 与趋势产出路径（Graph C1）](/agent-images/source:6rxddpszvsnganzpbxv8/page_030_1.png)
+![Box C 三种 AI 情景下的 r-star 与趋势产出路径（Graph C1）](images/page_030_1.png)
 
 **[P9] 五家超大规模企业 2025–26 年 AI 资本支出将超 1 万亿美元，且靠举债**
 > "The five largest hyperscalers are set to spend over a trillion US dollars on AI-related capital expenditure from 2025 through 2026. These commitments are outpacing earnings and the free cash flow of these firms, leading some to issue debt to raise additional financing (Graph 11.A)."；"the net economic surplus – the total payoff less investment costs – declines for the sector as a whole and could turn negative in adverse scenarios"（p.32，Graph 11.A–11.C）
@@ -177,7 +177,7 @@
 解读：AI 繁荣的融资缺口已被量化：支出超出内部现金流并转向债务；在"竞赛模型"下净经济剩余可能为负，失望情绪可把 capex 繁荣变为长期投资萧条，并外溢至资产负债表较弱的工程/采购/建设（EPC）供应商。
 新颖性：高 / 重要性：高
 
-![超大规模企业 AI 资本支出激增并超出内部现金流（Graph 11.A–11.C）](/agent-images/source:6rxddpszvsnganzpbxv8/page_033_1.png)
+![超大规模企业 AI 资本支出激增并超出内部现金流（Graph 11.A–11.C）](images/page_033_1.png)
 
 **[P31] 私人信贷对 AI/IT 板块敞口五年翻两番至 15%，零售型直贷基金已现赎回压力**
 > "Direct lending funds... have quadrupled their lending to the AI and information technology (IT) sectors in the past five years, to about 15% of their portfolios."；"direct lending funds catering to retail investors have faced mounting redemption requests, forcing some to liquidate assets and return capital despite having no contractual obligation to do so."（p.36，Graph 14.B、14.C）
@@ -201,7 +201,7 @@
 解读：2022–25 缩表周期中官方需求让出约 12 个百分点，全部由私人/NBFI 承接，其中杠杆对冲基金成为关键中介。市场定价权与波动性结构性转向融资依赖型投资者。
 新颖性：高 / 重要性：高
 
-![发达经济体主权债持有者结构的官方—私人换手（Graph 4.A–4.C）](/agent-images/source:6rxddpszvsnganzpbxv8/page_060_1.png)
+![发达经济体主权债持有者结构的官方—私人换手（Graph 4.A–4.C）](images/page_060_1.png)
 
 **[P6] 约 70% 的对冲基金双边美元回购以零折扣成交**
 > "Around 70% of bilateral USD repos and more than 50% of bilateral EUR repos with hedge funds are transacted at zero haircuts (Graph 5.B)... the most favourable terms are concentrated among the largest funds (Graph 5.C)."（p.52，Graph 5.B、5.C）
@@ -209,7 +209,7 @@
 解读：零折扣意味着可按抵押品近全值借款，杠杆实质无上限；且最优条款集中于前十大基金，融资条件一旦收紧，去杠杆与抛售的集中度极高（2020 年 3 月、2025 年 4 月的 swap-spread 平仓为证）。
 新颖性：高 / 重要性：高
 
-![对冲基金回购融资的零折扣占比与集中度（Graph 5.A–5.C）](/agent-images/source:6rxddpszvsnganzpbxv8/page_061_1.png)
+![对冲基金回购融资的零折扣占比与集中度（Graph 5.A–5.C）](images/page_061_1.png)
 
 **[P33] 银行-主权关联已"改道"为银行-NBFI 敞口**
 > "bank-sovereign risk co-movement has become less dependent on banks' direct sovereign bond holdings... banks' exposures to NBFIs have become a significant determinant of the co-movement between bank and sovereign credit default swap (CDS) spreads over the past few years (Graph 6.C)."（p.53，Graph 6.B、6.C）
@@ -271,7 +271,7 @@
 解读：欧元区反事实比较（债务 120% vs 60%）显示高债务国加息后通胀回落更少、产出跌更多，且基本财政余额反而恶化——加息"费产出而不抑通胀"。
 新颖性：高 / 重要性：高
 
-![高债务环境下加息的通胀—产出权衡恶化（Graph 10）](/agent-images/source:6rxddpszvsnganzpbxv8/page_069_1.png)
+![高债务环境下加息的通胀—产出权衡恶化（Graph 10）](images/page_069_1.png)
 
 **[P41] 三大政策间距收窄，拖延调整的代价上升**
 > "These shifts have narrowed the arm's length separation between monetary, fiscal and financial stability policies."；"Delay would instead make adjustment more costly and increase the likelihood that future shocks force difficult choices between price stability, financial stability and fiscal sustainability."（p.74–75）
@@ -289,7 +289,7 @@
 解读：既量化美元锚定的极端集中度，又用"不足三个工作日"把看似庞大的交易额还原为极小的净流量——直接对抗"稳定币规模巨大"的流行叙事。报告还指出，健全的本地监管本身并未催生非美元合规稳定币市场。
 新颖性：高 / 重要性：高
 
-![稳定币使用的币种与地域高度集中（Graph 1.A–1.B、2.A–2.B）](/agent-images/source:6rxddpszvsnganzpbxv8/page_097_1.png)
+![稳定币使用的币种与地域高度集中（Graph 1.A–1.B、2.A–2.B）](images/page_097_1.png)
 
 **[P42] 货币性不足：现行稳定币更像 ETF 份额而非支付手段**
 > "By construction, they cannot currently ensure exchange at par across issuers and blockchains under all conditions. Secondary market prices of stablecoins to date deviate from par, even if mostly moderately. Redemption frictions are common, indicating that current stablecoin designs resemble exchange-traded fund (ETF) shares rather than a means of payment."（p.100，Graph 3.B）
@@ -303,7 +303,7 @@
 解读：同一发行方在多个链上的稳定币实际是不同资产，跨链转移困难甚至可能永久损失——碎片化直接损害"货币单一性"，是主流叙事少提及的系统性问题。
 新颖性：高 / 重要性：中高
 
-![稳定币在公链上的分布碎片化（Graph 3.A–3.B）](/agent-images/source:6rxddpszvsnganzpbxv8/page_100_1.png)
+![稳定币在公链上的分布碎片化（Graph 3.A–3.B）](images/page_100_1.png)
 
 **[P44] 多功能加密中介的负债"经济上类似存款"却无审慎约束；稳定币占链上非法活动显著份额**
 > "Experience to date suggests that stablecoins account for a significant share of illicit on-chain activity... much stablecoin activity is handled by multifunction cryptoasset intermediaries whose borrowing activities create short-term redeemable liabilities economically similar to deposits, but typically without capital/liquidity buffers or consolidated supervision."（p.99）
@@ -347,7 +347,7 @@
 解读：用 100 美元家庭购买的静态资产负债表演示银行批发存款、短债、央行储备三类储备下的首批效应——这是理解稳定币冲击传导的分析骨架，也是后文全部量化结论的前提。
 新颖性：高 / 重要性：高
 
-![三类稳定币储备情景下的资产负债表传导（Graph 4）](/agent-images/source:6rxddpszvsnganzpbxv8/page_104_1.png)
+![三类稳定币储备情景下的资产负债表传导（Graph 4）](images/page_104_1.png)
 
 **[P10] 稳定币规避资本管制的效力强于外汇存款限制**
 > "While deposit dollarisation has been lower in economies with approval requirements on domestic foreign currency deposits, inflows into stablecoins have been broadly similar in economies with or without restrictions on stablecoin use between residents and non-residents (Graph 7.B)."（p.112，Graph 7.B）
@@ -355,7 +355,7 @@
 解读：传统"批准制"能压低外币存款占比，却压不住稳定币流入；代币的无记名属性与无托管钱包使居民—非居民限制形同虚设——资本管制对稳定币基本无效，这是对 EMDE 政策工具箱最直接的冲击。
 新颖性：高 / 重要性：高
 
-![外币存款管制对稳定币流入基本失效（Graph 7.A–7.B、E1.A–E1.B）](/agent-images/source:6rxddpszvsnganzpbxv8/page_111_1.png)
+![外币存款管制对稳定币流入基本失效（Graph 7.A–7.B、E1.A–E1.B）](images/page_111_1.png)
 
 **[P51] Box E：负债美元化与"实际美元化"侵蚀货币主权**
 > "If greater foreign stablecoin use leads to higher borrowing in foreign currency, vulnerabilities could rise significantly... should the use of foreign stablecoins expand to settlement of real transactions ("real dollarisation"), this could further impair the reach of domestic monetary policy, weaken monetary transmission and curtail monetary sovereignty."（p.112）
@@ -411,7 +411,7 @@
 解读："超越稳定币"的技术制度方案：央行以代币化准备金（或同步链接准备金账户）为私人代币化货币提供面值可兑锚，同时借网络效应克服碎片化；报告并注意到措辞松动——有条件获取央行流动性、非银接入央行结算账户均被列为"在严格护栏下可探讨"。
 新颖性：高 / 重要性：高
 
-![代币化私人货币与央行货币的层级结构（Graph 9）](/agent-images/source:6rxddpszvsnganzpbxv8/page_117_1.png)
+![代币化私人货币与央行货币的层级结构（Graph 9）](images/page_117_1.png)
 
 ---
 
