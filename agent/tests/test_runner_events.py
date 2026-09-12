@@ -98,7 +98,7 @@ async def test_on_event_mode_streams_lifecycle(monkeypatch):
     assert any("报告" in c for c in contents if c)
 
 
-async def test_without_on_event_uses_ainvoke(monkeypatch):
+async def test_without_on_event_still_streams_for_logs(monkeypatch):
     job = create_job("source:x", "核心观点")
     fake = _FakeOrchestrator()
 
@@ -122,4 +122,5 @@ async def test_without_on_event_uses_ainvoke(monkeypatch):
         await run_extraction_job(job)
 
     assert job.status == "done"
-    assert fake.invoked is True
+    # 统一 astream：无 SSE 消费者时仍流式执行（供 subagent 日志归因）
+    assert fake.invoked is False

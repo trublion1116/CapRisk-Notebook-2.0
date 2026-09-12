@@ -123,6 +123,7 @@ async def describe_section_images(
 
     async def one(i: int, img: str) -> None:
         if img in cache:
+            logger.info("[chart-reader] image=%s cache=hit", Path(img).name)
             return
         if on_event:
             await on_event(
@@ -133,11 +134,19 @@ async def describe_section_images(
                     "args": {"image": Path(img).name},
                 }
             )
+        t0 = time.monotonic()
         async with semaphore:
             try:
                 cache[img] = await describe_chart(img)
-            except Exception as e:  # 单图失败降级
-                logger.warning("chart describe failed: %s", img, exc_info=True)
+                logger.info(
+                    "[chart-reader] image=%s cache=miss chars=%d took=%.1fs",
+                    Path(img).name, len(cache[img]), time.monotonic() - t0,
+                )
+            except Exception as e:  # noqa: BLE001 - 单图失败降级
+                logger.warning(
+                    "[chart-reader] image=%s failed took=%.1fs err=%r",
+                    Path(img).name, time.monotonic() - t0, e,
+                )
                 cache[img] = f"（图表描述不可用: {e!r}）"
         if on_event:
             ok = not cache[img].startswith("（")
@@ -195,22 +204,42 @@ async def run_extraction_job(
             },
         ) as span:
             job.trace_id = str(getattr(span, "trace_id", "") or "")
+            # 阶段可观测性：每阶段一行结构化日志（[stage]/[chart-reader]/
+            # [subagent] 前缀可 grep），langfuse 恢复后 span 树与之互补
             job.record("fetching source material")
+            t0 = time.monotonic()
             with child_span("fetch-source-material"):
                 pdf_bytes, text, origin = await fetch_source_material(client, job)
+            logger.info(
+                "[stage] name=fetch agent=runner origin=%s pdf=%s took=%.1fs",
+                origin, len(pdf_bytes) if pdf_bytes else 0, time.monotonic() - t0,
+            )
             job.record(f"using {origin} material")
 
             # 数据面：章节结构 + box 剥离 + 图表页渲染
+            t0 = time.monotonic()
             with child_span("ingest"):
                 sections, meta = ingest(
                     pdf_bytes, text, source_id=job.source_id, image_root=IMAGE_ROOT
                 )
+            logger.info(
+                "[stage] name=ingest agent=ingestion/images.py strategy=%s "
+                "sections=%d chapters=%d boxes=%d images=%d took=%.1fs",
+                meta.strategy, len(sections), len(meta.chapters),
+                meta.box_count, meta.image_count, time.monotonic() - t0,
+            )
             job.sections = len(sections)
             job.record(f"ingested {len(sections)} sections ({_format_structure(meta)})")
 
             # 图表 VLM 描述（摄取期一次性生成，worker 阅读时直接可见）
+            t0 = time.monotonic()
             with child_span("chart-describe"):
                 described = await describe_section_images(sections, job, on_event)
+            logger.info(
+                "[stage] name=chart-describe agent=chart-reader images=%d "
+                "described=%d took=%.1fs",
+                meta.image_count, described, time.monotonic() - t0,
+            )
             if meta.image_count:
                 job.record(f"chart notes: {described}/{meta.image_count} described")
 
@@ -219,20 +248,48 @@ async def run_extraction_job(
                 source_title=job.source_title or "",
             )
             callbacks = [new_handler()]
-            if on_event is None:
-                await agent.ainvoke(
-                    {"messages": [HumanMessage(content="开始按流程提取核心观点。")]},
-                    config={"callbacks": callbacks},
-                )
-            else:
-                async for mode, chunk in agent.astream(
-                    {"messages": [HumanMessage(content="开始按流程提取核心观点。")]},
-                    config={"callbacks": callbacks},
-                    stream_mode=["updates"],
-                ):
-                    for event in events_from_update(chunk):
-                        await on_event(event)
+            t0 = time.monotonic()
+            # task 派发生命周期计时（tool_call id → 开始时刻）
+            task_timings: dict[str, float] = {}
 
+            async def _relay(event: dict[str, Any]) -> None:
+                """事件透传 + subagent/提交阶段的日志归因。"""
+                et, name, eid = event.get("type"), event.get("name", ""), event.get("id", "")
+                if et == "tool_call" and name == "task" and eid not in task_timings:
+                    # 同一 tool_call 可能出现在多个 update 块（deepagents
+                    # 事件形状），按 id 去重只记一次
+                    task_timings[eid] = time.monotonic()
+                    desc = str((event.get("args") or {}).get("description", ""))[:60]
+                    logger.info("[subagent] dispatch agent=viewpoint-extraction task=%r", desc)
+                elif et == "tool_result" and name == "task" and eid in task_timings:
+                    took = time.monotonic() - task_timings.pop(eid)
+                    preview = str(event.get("content") or "")[:60]
+                    logger.info(
+                        "[subagent] done agent=viewpoint-extraction took=%.1fs "
+                        "result=%r", took, preview,
+                    )
+                elif et == "tool_call" and name == "submit_report":
+                    logger.info(
+                        "[stage] name=report-submit agent=orchestrator chars=%d",
+                        len(str((event.get("args") or {}).get("content") or "")),
+                    )
+                if on_event is not None:
+                    await on_event(event)
+
+            # 统一 astream：SSE 场景透传事件，/extract 直接触发场景
+            # （on_event=None）仍产生 subagent/提交阶段日志
+            async for mode, chunk in agent.astream(
+                {"messages": [HumanMessage(content="开始按流程提取核心观点。")]},
+                config={"callbacks": callbacks},
+                stream_mode=["updates"],
+            ):
+                for event in events_from_update(chunk):
+                    await _relay(event)
+
+            logger.info(
+                "[stage] name=orchestrate agent=orchestrator sections=%d took=%.1fs",
+                len(sections), time.monotonic() - t0,
+            )
             span.update(
                 output={"sections": len(sections), "origin": origin, **{
                     k: v for k, v in meta.__dict__.items() if k != "strategy_chain"
