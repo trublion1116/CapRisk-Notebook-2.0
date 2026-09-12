@@ -1,5 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SourceInsightDialog } from './SourceInsightDialog'
 import { useInsight } from '@/lib/hooks/use-insights'
 
@@ -11,6 +12,18 @@ vi.mock('@/lib/hooks/use-insights', () => ({
 
 vi.mock('@/lib/hooks/use-modal-manager', () => ({
   useModalManager: () => ({ openModal: vi.fn() }),
+}))
+
+// v0.0.5: dialog now reads source/notebooks (save-as-note) — stub the hooks
+// so no QueryClientProvider network layer is exercised in these tests.
+vi.mock('@/lib/hooks/use-notebooks', () => ({
+  useNotebooks: vi.fn().mockReturnValue({ data: [{ id: 'notebook:1' }] }),
+}))
+
+vi.mock('@/lib/hooks/use-sources', () => ({
+  useSource: vi.fn().mockReturnValue({
+    data: { id: 'source:1', notebooks: ['notebook:1'] },
+  }),
 }))
 
 const mockUseInsight = vi.mocked(useInsight)
@@ -29,6 +42,11 @@ type UseInsightResult = ReturnType<typeof useInsight>
 
 const asResult = (value: Partial<UseInsightResult>) => value as UseInsightResult
 
+const renderDialog = (ui: React.ReactElement) =>
+  render(
+    <QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>
+  )
+
 describe('SourceInsightDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -39,7 +57,7 @@ describe('SourceInsightDialog', () => {
       asResult({ data: undefined, isLoading: false, isError: true, error: notFoundError })
     )
 
-    render(
+    renderDialog(
       <SourceInsightDialog
         open={true}
         onOpenChange={vi.fn()}
@@ -59,7 +77,7 @@ describe('SourceInsightDialog', () => {
       asResult({ data: undefined, isLoading: false, isError: true, error: networkError })
     )
 
-    render(
+    renderDialog(
       <SourceInsightDialog
         open={true}
         onOpenChange={vi.fn()}
@@ -79,7 +97,7 @@ describe('SourceInsightDialog', () => {
     )
     const onOpenChange = vi.fn()
 
-    render(
+    renderDialog(
       <SourceInsightDialog
         open={true}
         onOpenChange={onOpenChange}
@@ -108,7 +126,7 @@ describe('SourceInsightDialog', () => {
       })
     )
 
-    render(
+    renderDialog(
       <SourceInsightDialog
         open={true}
         onOpenChange={vi.fn()}

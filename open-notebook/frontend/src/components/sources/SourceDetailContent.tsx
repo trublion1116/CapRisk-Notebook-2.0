@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { sourcesApi } from '@/lib/api/sources'
@@ -20,6 +21,7 @@ import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { findQuoteContext } from '@/lib/utils/source-refs'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,6 +62,8 @@ import {
   Database,
   AlertCircle,
   MessageSquare,
+  NotebookPen,
+  X,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
@@ -102,6 +106,9 @@ function SourceDetailContentInner({
 }: SourceDetailContentProps) {
   const { t, language } = useTranslation()
   const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
   const [insights, setInsights] = useState<SourceInsightResponse[]>([])
   const [transformations, setTransformations] = useState<Transformation[]>([])
   const [selectedTransformation, setSelectedTransformation] = useState<string>('')
@@ -114,6 +121,30 @@ function SourceDetailContentInner({
   const [selectedInsight, setSelectedInsight] = useState<SourceInsightResponse | null>(null)
   const [insightToDelete, setInsightToDelete] = useState<string | null>(null)
   const [deletingInsight, setDeletingInsight] = useState(false)
+  const [savingNoteId, setSavingNoteId] = useState<string | null>(null)
+
+  // v0.0.5 引用定位：角标点击跳转携带 hl（引用原文）+ hl_label（出处），
+  // 打开即切到 content tab 并在顶部显示高亮定位卡
+  const [activeTab, setActiveTab] = useState('content')
+  const [highlight, setHighlight] = useState<{ quote: string; label: string } | null>(null)
+  useEffect(() => {
+    const hl = searchParams?.get('hl')
+    const hlLabel = searchParams?.get('hl_label') || ''
+    if (hl && searchParams?.get('modal') === 'source' && searchParams?.get('id') === sourceId) {
+      setHighlight({ quote: hl, label: hlLabel })
+      setActiveTab('content')
+    }
+  }, [searchParams, sourceId])
+
+  const clearHighlight = useCallback(() => {
+    setHighlight(null)
+    const params = new URLSearchParams(searchParams?.toString() || '')
+    if (params.has('hl') || params.has('hl_label')) {
+      params.delete('hl')
+      params.delete('hl_label')
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+    }
+  }, [searchParams, router, pathname])
 
   // A 404 means the source was deleted (e.g. a dangling chat/ask reference) —
   // handled by the shared "content no longer exists" state. The global query
@@ -122,6 +153,28 @@ function SourceDetailContentInner({
   const loadError = loadQueryError ? (isNotFoundError(loadQueryError) ? 'not-found' : 'error') : null
   const updateSource = useUpdateSource()
   const deleteSource = useDeleteSource()
+
+  // 见解一键保存为笔记：目标笔记本 = 来源所属第一个笔记本
+  const handleSaveInsightAsNote = useCallback(
+    async (insight: SourceInsightResponse) => {
+      const target = source?.notebooks?.[0]
+      if (!target) {
+        toast.error(t('sources.notebookRequired'))
+        return
+      }
+      setSavingNoteId(insight.id)
+      try {
+        await insightsApi.saveAsNote(insight.id, target)
+        toast.success(t('sources.savedAsNote'))
+      } catch (err) {
+        console.error('Failed to save insight as note:', err)
+        toast.error(t('sources.saveAsNoteFailed'))
+      } finally {
+        setSavingNoteId(null)
+      }
+    },
+    [source?.notebooks, t]
+  )
 
   // file_available comes from the source payload; downloads may flip it later,
   // so keep it as local state synced from the query data.
@@ -500,7 +553,7 @@ function SourceDetailContentInner({
 
       {/* Tabs Content */}
       <div className="flex-1 overflow-y-auto">
-        <Tabs defaultValue="content" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="w-full sticky top-0 z-10 bg-card">
             <TabsTrigger value="content">{t('sources.content')}</TabsTrigger>
             <TabsTrigger value="insights">
@@ -548,6 +601,41 @@ function SourceDetailContentInner({
                       </a>
                     </div>
                   )}
+                </div>
+              )}
+              {highlight && (
+                <div className="mb-4 rounded-lg border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 p-3" data-testid="source-highlight-card">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                      <Lightbulb className="h-3.5 w-3.5" />
+                      {t('sources.highlightLocated')}
+                      {highlight.label && (
+                        <span className="font-normal text-muted-foreground">· {highlight.label}</span>
+                      )}
+                    </span>
+                    <Button variant="ghost" size="sm" onClick={clearHighlight} className="h-6 px-2">
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  {(() => {
+                    const ctx = findQuoteContext(source?.full_text || '', highlight.quote)
+                    if (!ctx) {
+                      return (
+                        <p className="text-sm leading-relaxed text-foreground whitespace-pre-wrap">
+                          {highlight.quote}
+                        </p>
+                      )
+                    }
+                    return (
+                      <p className="text-sm leading-relaxed text-foreground">
+                        <span className="text-muted-foreground">…{ctx.before}</span>
+                        <mark className="rounded bg-amber-200 dark:bg-amber-800/60 px-0.5">
+                          {ctx.matched}
+                        </mark>
+                        <span className="text-muted-foreground">{ctx.after}…</span>
+                      </p>
+                    )
+                  })()}
                 </div>
               )}
               <MarkdownRenderer>
@@ -641,6 +729,20 @@ function SourceDetailContentInner({
                         {insight.content.slice(0, 180)}{insight.content.length > 180 ? '…' : ''}
                       </p>
                       <div className="mt-3 flex justify-end gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleSaveInsightAsNote(insight)}
+                          disabled={savingNoteId === insight.id}
+                          className="gap-1.5"
+                        >
+                          {savingNoteId === insight.id ? (
+                            <LoadingSpinner className="h-3.5 w-3.5" />
+                          ) : (
+                            <NotebookPen className="h-4 w-4" />
+                          )}
+                          {t('sources.saveAsNote')}
+                        </Button>
                         <Button size="sm" variant="outline" onClick={() => setSelectedInsight(insight)}>
                           {t('sources.viewInsight')}
                         </Button>

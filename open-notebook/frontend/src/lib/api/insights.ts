@@ -52,6 +52,15 @@ export const insightsApi = {
     await apiClient.delete(`/insights/${insightId}`)
   },
 
+  // Fork addition: convert an insight into a note in the given notebook
+  // (backend endpoint is upstream-native POST /insights/{id}/save-as-note)
+  saveAsNote: async (insightId: string, notebookId: string) => {
+    const response = await apiClient.post(`/insights/${insightId}/save-as-note`, {
+      notebook_id: notebookId,
+    })
+    return response.data
+  },
+
   getCommandStatus: async (commandId: string) => {
     const response = await apiClient.get<CommandJobStatusResponse>(
       `/commands/jobs/${commandId}`

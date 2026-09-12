@@ -1,14 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { FileText } from 'lucide-react'
-import {MarkdownRenderer} from '@/components/ui/markdown-renderer'
+import { FileText, NotebookPen } from 'lucide-react'
+import { LoadingSpinner } from '@/components/common/LoadingSpinner'
+import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
+import { SourceRefLink } from './SourceRefLink'
+import { parseReferences } from '@/lib/utils/source-refs'
 import { useInsight } from '@/lib/hooks/use-insights'
+import { useSource } from '@/lib/hooks/use-sources'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useNotebooks } from '@/lib/hooks/use-notebooks'
+import { insightsApi } from '@/lib/api/insights'
+import { toast } from 'sonner'
 import { ContentUnavailable } from '@/components/common/ContentUnavailable'
 import { isNotFoundError } from '@/lib/utils/error-handler'
 
@@ -30,6 +37,7 @@ export function SourceInsightDialog({ open, onOpenChange, insight, onDelete }: S
   const { openModal } = useModalManager()
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [savingNote, setSavingNote] = useState(false)
 
   // Ensure insight ID has 'source_insight:' prefix for API calls
   const insightIdWithPrefix = insight?.id
@@ -46,9 +54,38 @@ export function SourceInsightDialog({ open, onOpenChange, insight, onDelete }: S
   // Get source_id from fetched data (preferred) or passed-in insight
   const sourceId = displayInsight?.source_id
 
+  // v0.0.5 引用角标：解析文末 References 表格，正文 [n](#ref-n) 链接
+  // 渲染为角标组件（hover 出处 / 点击跳原文）
+  const refs = useMemo(
+    () => parseReferences(displayInsight?.content ?? ''),
+    [displayInsight?.content]
+  )
+
   const handleViewSource = () => {
     if (sourceId) {
       openModal('source', sourceId)
+    }
+  }
+
+  // 保存为笔记：优先来源所属笔记本（source.notebooks[0]），否则第一个笔记本
+  const { data: notebooks } = useNotebooks()
+  const { data: sourceOfInsight } = useSource(sourceId ?? '')
+  const handleSaveAsNote = async () => {
+    const targetNotebook =
+      sourceOfInsight?.notebooks?.[0] ?? notebooks?.[0]?.id
+    if (!insightIdWithPrefix || !targetNotebook) {
+      toast.error(t('sources.notebookRequired'))
+      return
+    }
+    setSavingNote(true)
+    try {
+      await insightsApi.saveAsNote(insightIdWithPrefix, targetNotebook)
+      toast.success(t('sources.savedAsNote'))
+    } catch (err) {
+      console.error('Failed to save insight as note:', err)
+      toast.error(t('sources.saveAsNoteFailed'))
+    } finally {
+      setSavingNote(false)
     }
   }
 
@@ -84,6 +121,21 @@ export function SourceInsightDialog({ open, onOpenChange, insight, onDelete }: S
                   {displayInsight.insight_type}
                 </Badge>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleSaveAsNote}
+                disabled={savingNote}
+                className="gap-1"
+                title={t('sources.saveAsNote')}
+              >
+                {savingNote ? (
+                  <LoadingSpinner className="h-3 w-3" />
+                ) : (
+                  <NotebookPen className="h-3 w-3" />
+                )}
+                {t('sources.saveAsNote')}
+              </Button>
               {sourceId && (
                 <Button
                   variant="outline"
@@ -134,7 +186,23 @@ export function SourceInsightDialog({ open, onOpenChange, insight, onDelete }: S
                 onClose={() => onOpenChange(false)}
               />
             ) : displayInsight ? (
-              <MarkdownRenderer>
+              <MarkdownRenderer
+                components={{
+                  a: ({ href, children }) => {
+                    const m = typeof href === 'string' ? /#ref-(\d+)/.exec(href) : null
+                    if (m) {
+                      return (
+                        <SourceRefLink
+                          n={m[1]}
+                          data={refs.get(m[1])}
+                          sourceId={sourceId}
+                        />
+                      )
+                    }
+                    return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+                  },
+                }}
+              >
                 {displayInsight.content}
               </MarkdownRenderer>
             ) : (
