@@ -1,7 +1,7 @@
 # HANDOFF 交接文档（2026-09-12 会话二：可观测性日志版完成）
 
 > 写给零上下文的新会话。配套：`AGENT_V2_PLAN.md`（六阶段升级方案）、`AGENT_CLUSTER_RESEARCH.md`（框架选型）、`showcase/vX.Y.Z/`（各版本实际效果快照）。
-> **当前状态**：可观测性日志版已完成并提交（c0b1e70）：四阶段执行者归因日志经迷你端到端验证（含缓存命中/派发计时/提交统计）；langfuse 服务端修复仍被网络阻塞（见遗留问题 2）。
+> **当前状态**：可观测性完整落地（日志 + langfuse 双轨）：四阶段执行者归因日志与 langfuse trace 树均验证通过；langfuse "落库问题"确认为误诊（v4 events_only 架构，UI 用 Observations 视图，legacy API 不可用属设计）。
 
 ## 一、项目背景速览
 
@@ -70,11 +70,11 @@ VLM 图表描述 app/vision.py + subagents/chart_reader.py: bigmodel glm-4.6v（
 ## 五、遗留问题
 
 1. References 页码列偶为 "—"（本轮编排未从候选带出页码；跳转定位靠原文摘录不受影响）——可在 F6 加页码强制校验
-2. **langfuse spans 落库问题——根因已完全定案（2026-09-12 排查链）**，非 agent 侧问题：
-   - agent→langfuse 链路全通：SDK 4.15.1 auth_check ✓；OTLP 正确端点是 **`/api/public/otel/v1/traces`（是 `otel` 不是 `otlp`**，别再 curl 错路径）；curl 直发 200 入队；worker 消费正常（minio `events/` 13 天 343MB、ClickHouse **events_core 11671 行实时更新**，含 SPAN/CHAIN/AGENT/GENERATION/TOOL）
-   - **真断点**：`traces`/`observations`/`analytics_*` 读优化表全 0——v4.0 早期镜像（13 天前拉的 `:4` 滚动 tag）的 trace-upsert 派生缺陷（redis 里 `bull:trace-upsert` 队列存在但从未有 job 投递，上游 web 不投）
-   - 修复 = 升级镜像；但 `docker.langfuse.com` 307 重定向到 registry-1.docker.io（被墙），Clash 节点对 Docker Hub 也 000 → 待用户配 Docker Desktop 代理 + 可用节点
-   - **坑**：`LANGFUSE_S3_BATCH_EXPORT_ENABLED` 是"数据导出到外部 S3"功能，**与 ingestion 无关**——误开会每调度周期报 ioredis socket timeout（已撤销）。另 worker 有偶发 Redis 30s 超时（多队列同时报），疑 WSL Docker 网络抖动，未处理
+2. ~~langfuse spans 落库问题~~ **已关闭（2026-09-12 真相：从未坏过，是误诊）**：
+   - **langfuse v4 = events_only 架构**：读走 `events_full`/`events_core`，UI 主界面是 **Observations 视图**（默认 Is Root Observation=true 过滤，等价旧 traces 列表）；`traces`/`observations` 旧读表恒 0 是**设计**（不再写入）
+   - **legacy REST API（GET /api/public/traces 等）在 events_only 下 404/不可用**——历史会话用它验证得出"spans 未落库"是误诊；正确读法：`GET /api/public/v2/observations?traceId=...`
+   - 已升级镜像钉 v4.35.0 并验证：迷你端到端 trace 78 条 observations 全落库（fetch/ingest/chart-describe 阶段 span + task:viewpoint-extraction 派发生命周期 + deepagents CHAIN/TOOL/GENERATION 层级 + VLM LLM span）
+   - 坑记录：OTLP 正确端点 `/api/public/otel/v1/traces`（`otel` 非 `otlp`）；`LANGFUSE_S3_BATCH_EXPORT_ENABLED` 是导出功能误开会报 Redis 超时（勿开）；"DUAL WRITE: No partitions available"日志在 events_only 下属正常；worker 偶发 ioredis 30s 超时疑 WSL 网络抖动，未处理
 3. agent job 表进程内存（重启丢正在跑的任务）；V2 阶段 1b 的 SQLite 持久化未做（用户暂缓了阶段 1）
 4. quote 逐字校验 + gold 评分未做（用户明确暂缓，改由"评估 agent"方向承接）
 5. locale unused-key 测试在 WSL /mnt/c 上环境性超时（30s 扫不完源码树，非功能问题）

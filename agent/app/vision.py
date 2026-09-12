@@ -62,7 +62,13 @@ def _build_vlm() -> ChatOpenAI:
 
 
 async def describe_chart(image_path: str | Path, prompt: str | None = None) -> str:
-    """单张图表 PNG → 结构化中文描述。失败抛异常，调用方负责降级。"""
+    """单张图表 PNG → 结构化中文描述。失败抛异常，调用方负责降级。
+
+    挂 langfuse callback：每次 VLM 调用成为一个嵌套 LLM span
+    （token/耗时自动采集），在 trace 树上归到 chart-reader 名下。
+    """
+    from app.tracing import new_handler
+
     data = Path(image_path).read_bytes()
     b64 = base64.b64encode(data).decode()
     vlm = _build_vlm()
@@ -75,7 +81,9 @@ async def describe_chart(image_path: str | Path, prompt: str | None = None) -> s
             {"type": "text", "text": prompt or CHART_PROMPT},
         ]
     )
-    response = await vlm.ainvoke([message])
+    response = await vlm.ainvoke(
+        [message], config={"callbacks": [new_handler()]}
+    )
     content = response.content if isinstance(response.content, str) else str(response.content)
     if not content.strip():
         raise RuntimeError(f"empty VLM response for {image_path}")

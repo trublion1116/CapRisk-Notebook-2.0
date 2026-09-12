@@ -66,3 +66,29 @@ def child_span(name: str, input: dict | None = None) -> Iterator[Any]:
         if input is not None:
             span.update(input=input)
         yield span
+
+
+def span_now(name: str, input: dict | None = None) -> Any:
+    """手动生命周期的 child span（跨事件循环的场景，如 task 派发→完成）。
+
+    返回 span 对象，调用方在结束时 span.end()；langfuse 未配置时返回
+    轻量假对象（链式 update/end 均 no-op）。
+    """
+    try:
+        langfuse = get_client()
+        span = langfuse.start_observation(as_type="span", name=name)
+    except Exception:  # noqa: BLE001 - tracing 永不破坏主流程
+        return _NullSpan()
+    if input is not None:
+        span.update(input=input)
+    return span
+
+
+class _NullSpan:
+    """langfuse 不可用时的 no-op 占位。"""
+
+    def update(self, *args: Any, **kwargs: Any) -> "_NullSpan":
+        return self
+
+    def end(self) -> None:
+        pass

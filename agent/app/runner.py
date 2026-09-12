@@ -13,7 +13,7 @@ from app.chat_stream import events_from_update
 from app.ingestion import IngestMeta, ingest
 from app.jobs import ExtractionJob
 from app.on_client import OpenNotebookClient
-from app.tracing import child_span, new_handler, traced
+from app.tracing import child_span, new_handler, span_now, traced
 from app.vision import describe_chart, is_vision_available
 
 logger = logging.getLogger(__name__)
@@ -135,19 +135,20 @@ async def describe_section_images(
                 }
             )
         t0 = time.monotonic()
-        async with semaphore:
-            try:
-                cache[img] = await describe_chart(img)
-                logger.info(
-                    "[chart-reader] image=%s cache=miss chars=%d took=%.1fs",
-                    Path(img).name, len(cache[img]), time.monotonic() - t0,
-                )
-            except Exception as e:  # noqa: BLE001 - 单图失败降级
-                logger.warning(
-                    "[chart-reader] image=%s failed took=%.1fs err=%r",
-                    Path(img).name, time.monotonic() - t0, e,
-                )
-                cache[img] = f"（图表描述不可用: {e!r}）"
+        with child_span(f"chart-reader:{Path(img).name}"):
+            async with semaphore:
+                try:
+                    cache[img] = await describe_chart(img)
+                    logger.info(
+                        "[chart-reader] image=%s cache=miss chars=%d took=%.1fs",
+                        Path(img).name, len(cache[img]), time.monotonic() - t0,
+                    )
+                except Exception as e:  # noqa: BLE001 - 单图失败降级
+                    logger.warning(
+                        "[chart-reader] image=%s failed took=%.1fs err=%r",
+                        Path(img).name, time.monotonic() - t0, e,
+                    )
+                    cache[img] = f"（图表描述不可用: {e!r}）"
         if on_event:
             ok = not cache[img].startswith("（")
             await on_event(
@@ -249,11 +250,12 @@ async def run_extraction_job(
             )
             callbacks = [new_handler()]
             t0 = time.monotonic()
-            # task 派发生命周期计时（tool_call id → 开始时刻）
+            # task 派发生命周期计时（tool_call id → 开始时刻/span）
             task_timings: dict[str, float] = {}
+            task_spans: dict[str, Any] = {}
 
             async def _relay(event: dict[str, Any]) -> None:
-                """事件透传 + subagent/提交阶段的日志归因。"""
+                """事件透传 + subagent/提交阶段的日志与 span 归因。"""
                 et, name, eid = event.get("type"), event.get("name", ""), event.get("id", "")
                 if et == "tool_call" and name == "task" and eid not in task_timings:
                     # 同一 tool_call 可能出现在多个 update 块（deepagents
@@ -261,6 +263,9 @@ async def run_extraction_job(
                     task_timings[eid] = time.monotonic()
                     desc = str((event.get("args") or {}).get("description", ""))[:60]
                     logger.info("[subagent] dispatch agent=viewpoint-extraction task=%r", desc)
+                    task_spans[eid] = span_now(
+                        "task:viewpoint-extraction", input={"task": desc}
+                    )
                 elif et == "tool_result" and name == "task" and eid in task_timings:
                     took = time.monotonic() - task_timings.pop(eid)
                     preview = str(event.get("content") or "")[:60]
@@ -268,6 +273,10 @@ async def run_extraction_job(
                         "[subagent] done agent=viewpoint-extraction took=%.1fs "
                         "result=%r", took, preview,
                     )
+                    sp = task_spans.pop(eid, None)
+                    if sp is not None:
+                        sp.update(output={"took_s": round(took, 1), "result": preview[:200]})
+                        sp.end()
                 elif et == "tool_call" and name == "submit_report":
                     logger.info(
                         "[stage] name=report-submit agent=orchestrator chars=%d",
