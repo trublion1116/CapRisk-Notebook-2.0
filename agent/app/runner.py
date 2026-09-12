@@ -28,6 +28,10 @@ IMAGE_ROOT = Path(__file__).parent.parent / "data" / "images"
 # VLM 逐图描述的并发上限：视觉调用慢（thinking 模型），独立于文本并发
 VISION_CONCURRENCY = 2
 
+# notes.json 缓存版本：裁剪参数/渲染精度变化会改变图片内容（路径不变），
+# 版本号不符整体失效，防止命中"旧图新路径"的过期描述
+NOTES_CACHE_VERSION = 2
+
 # Progress event callback: async, receives tool_call/tool_result event dicts
 OnEvent = Callable[[dict[str, Any]], Awaitable[None]]
 
@@ -101,11 +105,13 @@ async def describe_section_images(
     cache_file = IMAGE_ROOT / job.source_id / "notes.json"
     if cache_file.exists():
         try:
-            cache = {
-                k: v
-                for k, v in json.loads(cache_file.read_text()).items()
-                if Path(k).exists()
-            }
+            blob = json.loads(cache_file.read_text())
+            if blob.get("_v") == NOTES_CACHE_VERSION:
+                cache = {
+                    k: v
+                    for k, v in blob.get("notes", {}).items()
+                    if Path(k).exists()
+                }
         except Exception:  # noqa: BLE001 - 缓存损坏当无缓存
             logger.warning("notes cache unreadable: %s", cache_file)
             cache = {}
@@ -149,7 +155,12 @@ async def describe_section_images(
     try:
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_text(
-            json.dumps(cache, ensure_ascii=False, indent=1), encoding="utf-8"
+            json.dumps(
+                {"_v": NOTES_CACHE_VERSION, "notes": cache},
+                ensure_ascii=False,
+                indent=1,
+            ),
+            encoding="utf-8",
         )
     except Exception:  # noqa: BLE001 - 缓存写失败不影响主流程
         logger.warning("notes cache write failed: %s", cache_file)

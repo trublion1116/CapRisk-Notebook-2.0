@@ -16,6 +16,7 @@ BIS 图表是矢量图（不是嵌入位图），pypdf 提嵌入图拿到的是�
 """
 
 import logging
+import re
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -34,11 +35,20 @@ RENDER_SCALE = 200 / 72
 CLUSTER_GAP = 22
 # 簇最小面积（pt²）：过滤孤线等噪声（单个子图约 100x70pt = 7000）
 MIN_REGION_AREA = 4000
-# 簇 bbox 向外扩展：左右含轴标签，底部多扩以纳入图注（约 3 行小字）
-PAD_X, PAD_TOP, PAD_BOTTOM = 10, 8, 30
+# 簇 bbox 向外扩展：左右含轴标签；上下方向小 padding——图注（"Graph
+# N.X" 文本行）由 _merge_captions 按文本层坐标精准并入，不靠盲扩
+PAD_X, PAD_TOP, PAD_BOTTOM = 10, 8, 8
+# 图注并入搜索半径（pt）：图注行中心距簇边界的最大距离（图注可在图
+# 上方或下方——实测 E1 图注在图形上方，B1 在下方，方向不固定）
+CAPTION_MERGE_RADIUS = 50
 # 页眉/页脚带（pt）：带内矢量对象（BIS 页眉装饰线每页出现在 y≈713-779）
 # 不是图表，作聚类种子前剔除——否则每页多出一张 482x66 的页眉截图
 HEADER_BAND, FOOTER_BAND = 80, 55
+# 簇占页面面积超过此比例视为聚合过度（Box 专题页装饰元素会链式连接
+# 整页内容，实测 Box B1/E1 页聚到 57-69%）——用更小 gap 递归细分
+MAX_REGION_RATIO = 0.45
+# 细分的 gap 序列（逐级减半）：图表内部元素间距远小于图表间间距
+REFINE_GAPS = (12, 7, 4)
 
 
 def detect_chart_pages(pdf_doc: pdfium.PdfDocument) -> dict[int, int]:
@@ -71,11 +81,108 @@ def _boxes_close(a: tuple, b: tuple, gap: float = CLUSTER_GAP) -> bool:
     )
 
 
+def _cluster_boxes(
+    boxes: list[tuple], gap: float
+) -> list[tuple[tuple, list[tuple]]]:
+    """贪心聚类（链式传播）。返回 [(簇 bbox, 成员 bbox 列表), ...]。
+
+    成员保留在簇上：超限簇细分时需要知道簇内原始对象。
+    """
+    clusters: list[tuple[tuple, list[tuple]]] = [(b, [b]) for b in boxes]
+    merged = True
+    while merged:
+        merged = False
+        out: list[tuple[tuple, list[tuple]]] = []
+        for box, members in clusters:
+            idx = next(
+                (i for i, (c, _) in enumerate(out) if _boxes_close(c, box, gap)),
+                None,
+            )
+            if idx is not None:
+                c, m = out[idx]
+                out[idx] = (_merge_boxes(c, box), m + members)
+                merged = True
+            else:
+                out.append((box, members))
+        clusters = out
+    return clusters
+
+
+# 细长贯穿线过滤：宽超过页面一半且厚度 <3pt 的对象（box 分隔线/表格
+# 线）bbox 会与横向所有对象"相交"，一条线就能把整页链式连通——实测
+# p24 即使 gap=0 也聚成 64% 单簇的根因。图表轴线因宽度 < 半页不受影响。
+SPAN_LINE_MAX_THICK = 3.0
+SPAN_LINE_MIN_RATIO = 0.5
+
+
+def _is_span_line(box: tuple, page_w: float, page_h: float) -> bool:
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    return (
+        w > SPAN_LINE_MIN_RATIO * page_w and h < SPAN_LINE_MAX_THICK
+    ) or (h > SPAN_LINE_MIN_RATIO * page_h and w < SPAN_LINE_MAX_THICK)
+
+
+def _caption_anchors(page: pdfium.PdfPage) -> list[tuple]:
+    """文本层图注行锚点：『Graph N』/『Graph X1』等编号首字符的 bbox。
+
+    只取编号首字符（一行图注的 y 即行 y，x 用于水平重叠判断）。
+    """
+    tp = page.get_textpage()
+    try:
+        text = tp.get_text_bounded()
+        anchors = []
+        for m in re.finditer(r"Graph [A-Z]?\d", text):
+            try:
+                b = tp.get_charbox(m.start())  # (l, b, r, t)
+            except Exception:  # 单字符取坐标失败跳过
+                logger.debug("charbox failed at %d", m.start(), exc_info=True)
+                continue
+            anchors.append((b[0], b[1], b[2], b[3]))
+        return anchors
+    except Exception:  # 文本层不可用当无图注
+        logger.debug("text layer unavailable", exc_info=True)
+        return []
+
+
+def _merge_captions(
+    regions: list[tuple], captions: list[tuple]
+) -> list[tuple]:
+    """把图注行锚点并入水平重叠、垂直邻近的区域（扩展 y 边界）。
+
+    一条图注只并入最近的一个区域；无匹配区域的孤立图注忽略
+    （可能是正文引用，正文里 "Graph N" 也出现——但正文引用与任何
+    矢量簇都不邻近，天然被 CAPTION_MERGE_RADIUS 过滤）。
+    """
+    if not captions or not regions:
+        return regions
+    out = []
+    used = [False] * len(captions)
+    for r in regions:
+        x0, y0, x1, y1 = r
+        for i, c in enumerate(captions):
+            if used[i]:
+                continue
+            # 水平区间需有重叠（图注行与图形区同列）
+            if c[0] > x1 or c[2] < x0:
+                continue
+            # 垂直邻近：图注在区域上方或下方 radius 内（含已在区域内）
+            if (y0 - CAPTION_MERGE_RADIUS) <= c[1] <= (y1 + CAPTION_MERGE_RADIUS):
+                x0, y0 = min(x0, c[0]), min(y0, c[1])
+                x1, y1 = max(x1, c[2]), max(y1, c[3])
+                used[i] = True
+        out.append((x0, y0, x1, y1))
+    return out
+
+
 def extract_chart_regions(page: pdfium.PdfPage) -> list[tuple]:
     """页面 → 图表区域 bbox 列表（PDF 坐标，已含边距扩展）。
 
     只用 path/image 对象做聚类种子（图表是矢量密集区；正文文本不参与，
-    避免把段落聚进来）。小面积簇过滤噪声。
+    避免把段落聚进来）。小面积簇过滤噪声。占页面超过 MAX_REGION_RATIO
+    的簇（Box 专题页装饰元素链式连接整页的过度聚合）用逐级减半的 gap
+    递归细分——图表内部元素间距（<4pt）远小于图表/装饰元素之间，细分
+    后各子图/图组自然分离。
     """
     seeds: list[tuple] = []
     page_w, page_h = page.get_size()
@@ -93,33 +200,50 @@ def extract_chart_regions(page: pdfium.PdfPage) -> list[tuple]:
             # 页眉/页脚带的装饰元素不作种子（见 HEADER_BAND 说明）
             if pos[1] > page_h - HEADER_BAND or pos[3] < FOOTER_BAND:
                 continue
+            # 贯穿性细线不作种子（见 _is_span_line 说明）
+            if _is_span_line(pos, page_w, page_h):
+                continue
             seeds.append(tuple(pos))
     except Exception:  # 对象枚举失败退回整页
         logger.debug("object enum failed", exc_info=True)
         return []
 
-    # 贪心聚类：反复合并邻近簇直到稳定（对象数百级，两轮即收敛）
-    clusters = list(seeds)
-    merged = True
-    while merged:
-        merged = False
-        out: list[tuple] = []
-        for box in clusters:
-            hit = next((c for c in out if _boxes_close(c, box)), None)
-            if hit is not None:
-                out[out.index(hit)] = _merge_boxes(hit, box)
-                merged = True
-            else:
-                out.append(box)
-        clusters = out
+    if not seeds:
+        return []
 
-    page_w, page_h = page.get_size()
+    page_area = page_w * page_h
+    final: list[tuple] = []
+
+    def _area(c: tuple) -> float:
+        return (c[2] - c[0]) * (c[3] - c[1])
+
+    def _refine(cbox: tuple, members: list[tuple], gap_idx: int) -> None:
+        """超限簇细分：小 gap 只会分得更细；分不开说明是紧密单体，保留。"""
+        if _area(cbox) <= MAX_REGION_RATIO * page_area:
+            final.append(cbox)
+            return
+        if gap_idx >= len(REFINE_GAPS):
+            # 细分到头仍超限：整版图组，保留兜底（好过丢图）
+            final.append(cbox)
+            return
+        subs = _cluster_boxes(members, REFINE_GAPS[gap_idx])
+        if len(subs) <= 1:
+            # 元素间距 ≤ 当前 gap：真正的整版大图，保留
+            final.append(cbox)
+            return
+        for sub_box, sub_members in subs:
+            _refine(sub_box, sub_members, gap_idx + 1)
+
+    for cbox, members in _cluster_boxes(seeds, CLUSTER_GAP):
+        _refine(cbox, members, 0)
+
+    # 图注文本行并入（先于 PAD 扩展：用簇原始边界判断邻近更准）
+    final = [c for c in final if _area(c) >= MIN_REGION_AREA]
+    final = _merge_captions(final, _caption_anchors(page))
+
     regions = []
-    for c in clusters:
-        area = (c[2] - c[0]) * (c[3] - c[1])
-        if area < MIN_REGION_AREA:
-            continue
-        # 边距扩展（底部多扩容纳图注），并裁到页面范围内
+    for c in final:
+        # 边距扩展（图注已精准并入，只剩小 padding），裁到页面范围内
         x0 = max(c[0] - PAD_X, 0)
         y0 = max(c[1] - PAD_BOTTOM, FOOTER_BAND)
         x1 = min(c[2] + PAD_X, page_w)
