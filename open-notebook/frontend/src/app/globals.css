@@ -438,3 +438,20 @@
     content: none !important;
   }
 }
+
+/* Fork (v0.0.5): 引用角标跳转定位——原文段落滚动到位后的琥珀色闪烁高亮 */
+@keyframes source-highlight-flash {
+  0%, 60% { background-color: rgb(254 243 199); } /* amber-100 */
+  100% { background-color: transparent; }
+}
+.dark .source-highlight-flash {
+  animation-name: source-highlight-flash-dark;
+}
+@keyframes source-highlight-flash-dark {
+  0%, 60% { background-color: rgb(69 26 3); } /* amber-950 */
+  100% { background-color: transparent; }
+}
+.source-highlight-flash {
+  animation: source-highlight-flash 2.6s ease-out 1 both;
+  border-radius: 0.25rem;
+}

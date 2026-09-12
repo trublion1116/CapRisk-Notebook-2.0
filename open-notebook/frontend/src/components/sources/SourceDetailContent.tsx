@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { useQueryClient } from '@tanstack/react-query'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
@@ -90,6 +90,35 @@ const safeExternalHref = (url: string | null | undefined): string | null => {
   }
 }
 
+// 在容器 DOM 的文本节点中定位包含 needle 的最近块级元素（角标跳转滚动用）。
+// 两级容错与 findQuoteContext 一致：精确子串 → 归一化（空白/重复字符折叠）。
+function locateTextInDom(container: HTMLElement, matched: string): HTMLElement | null {
+  const needle = matched.slice(0, 80).trim()
+  if (!needle) return null
+  const BLOCK = 'P,LI,TD,PRE,H1,H2,H3,H4,BLOCKQUOTE,DIV'
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT)
+  const nodes: Text[] = []
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) nodes.push(n as Text)
+
+  // 第一轮：精确子串
+  for (const node of nodes) {
+    if ((node.textContent || '').includes(needle)) {
+      return node.parentElement?.closest(BLOCK) ?? node.parentElement
+    }
+  }
+  // 第二轮：归一化（pdfplumber 重复字符等）
+  const canon = (s: string) =>
+    s.toLowerCase().replace(/\s+/g, ' ').replace(/(.)\1+/g, '$1').trim()
+  const target = canon(needle)
+  if (!target) return null
+  for (const node of nodes) {
+    if (canon(node.textContent || '').includes(target)) {
+      return node.parentElement?.closest(BLOCK) ?? node.parentElement
+    }
+  }
+  return null
+}
+
 export function SourceDetailContent(props: SourceDetailContentProps) {
   // Remount per source so all per-source UI state (active tab, transient
   // flags, insight selection…) resets on navigation, without parents needing
@@ -153,6 +182,28 @@ function SourceDetailContentInner({
   const loadError = loadQueryError ? (isNotFoundError(loadQueryError) ? 'not-found' : 'error') : null
   const updateSource = useUpdateSource()
   const deleteSource = useDeleteSource()
+
+  // v0.0.5: 角标跳转后自动滚动到 full_text 原文段落并闪烁高亮
+  // （Gemini Notebook 式定位）。容器是 content tab 的全文渲染区。
+  const fullTextRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!highlight || activeTab !== 'content' || !source?.full_text) return
+    const ctx = findQuoteContext(source.full_text, highlight.quote)
+    if (!ctx) return
+    // 等 React commit 全文 DOM 后再定位
+    const raf = requestAnimationFrame(() => {
+      const container = fullTextRef.current
+      if (!container) return
+      const el = locateTextInDom(container, ctx.matched)
+      if (!el) return
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.remove('source-highlight-flash')
+      // 强制 reflow 让动画可重复触发
+      void el.offsetWidth
+      el.classList.add('source-highlight-flash')
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [highlight, activeTab, source?.full_text])
 
   // 见解一键保存为笔记：目标笔记本 = 来源所属第一个笔记本
   const handleSaveInsightAsNote = useCallback(
@@ -564,6 +615,7 @@ function SourceDetailContentInner({
 
           <TabsContent value="content" className="mt-5">
             <section>
+              <div ref={fullTextRef} className="source-fulltext">
               {externalHref && !isYouTubeUrl && (
                 <p className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
                   <LinkIcon className="h-3.5 w-3.5 shrink-0" />
@@ -641,6 +693,7 @@ function SourceDetailContentInner({
               <MarkdownRenderer>
                 {source.full_text || t('sources.noContent')}
               </MarkdownRenderer>
+              </div>
             </section>
           </TabsContent>
 
