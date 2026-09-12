@@ -28,3 +28,4 @@ langfuse/
 # Personal session / chat working notes
 session-*.md
 chat*.md
+.claude/
