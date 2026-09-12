@@ -1,7 +1,7 @@
-# HANDOFF 交接文档（2026-09-12 会话二：可观测性进行中，代码未提交）
+# HANDOFF 交接文档（2026-09-12 会话二：可观测性日志版完成）
 
 > 写给零上下文的新会话。配套：`AGENT_V2_PLAN.md`（六阶段升级方案）、`AGENT_CLUSTER_RESEARCH.md`（框架选型）、`showcase/vX.Y.Z/`（各版本实际效果快照）。
-> **当前状态**：v0.0.5 已推送（tag 对齐）；本会话在做"全链路可观测性"（用户想看到图表提取/图表分析/观点提取/报告生成各阶段的执行者与过程）——**阶段 B/C 代码已完成但未提交**，阶段 D 验证跑到一半被暂停，langfuse 服务端修复被网络阻塞。详见"下一步计划"第 0 条。
+> **当前状态**：可观测性日志版已完成并提交（c0b1e70）：四阶段执行者归因日志经迷你端到端验证（含缓存命中/派发计时/提交统计）；langfuse 服务端修复仍被网络阻塞（见遗留问题 2）。
 
 ## 一、项目背景速览
 
@@ -56,7 +56,7 @@ VLM 图表描述 app/vision.py + subagents/chart_reader.py: bigmodel glm-4.6v（
 
 0. **【进行中】全链路可观测性**（本会话任务，断点续接处）：
    - 已完成：①`app/subagents/chart_reader.py`——图表解读归一为注册 subagent（SYSTEM_PROMPT 引用 vision.CHART_PROMPT，build_tools 空 + description 注明编排勿派发，实际调度保持代码循环）②`runner.py` 结构化阶段日志：`[stage] name=fetch/ingest/chart-describe/orchestrate/report-submit agent=... took=...`、`[chart-reader] image=... cache=miss chars=... took=...`、`[subagent] dispatch/done agent=viewpoint-extraction`；编排统一 astream（/extract 无 SSE 也产生日志）；测试 39 passed + ruff 干净。**以上均未 commit**
-   - **待办 a（先做）**：跑迷你端到端验证日志——`cd agent && PYTHONPATH=. timeout 900 uv run python /tmp/opencode/mini_e2e_obs.py`（脚本在 /tmp，丢了就按 git 里 test_runner_events 的 mock 方式重写），确认 `[subagent]` 与 `[chart-reader]` 日志行出现，然后 **commit 这批代码**
+   - ~~待办 a~~ 已完成（c0b1e70）：迷你端到端验证通过——[stage]×5/[chart-reader] cache=hit×8/[subagent] dispatch+done（计时）/[stage] report-submit 全部出现；验证脚本 /tmp/opencode/mini_e2e_obs.py（丢失则按 tests/test_runner_events.py 的 mock 方式重写）
    - **待办 b（被网络阻塞）**：langfuse 服务端升级修复（根因见遗留问题 2）——需 Docker Desktop 配 Clash 代理（Settings→Resources→Proxies→`http://host.docker.internal:7897`，注意 WSL shell 的 proxy_on 不影响 Windows 侧 daemon）且 Clash 节点放行 Docker Hub，然后 `cd langfuse && docker compose pull && docker compose up -d`（会自动跑 ClickHouse 迁移）。升级后补 span 埋点：VLM 调用挂 `new_handler()` callbacks、task 派发生命周期开 child_span（日志版逻辑已就位，加 span 是平行小改）
 1. **桌面演练/推演（样式后置）**——用户已确认四个决策：
    - 触发：chat 触发（"推演：霍尔木兹封锁再持续 3 个月"）+ 推演报告作为新见解入库（复用 SSE/角标/保存笔记链路）
